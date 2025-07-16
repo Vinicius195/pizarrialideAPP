@@ -31,7 +31,8 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification.title || 'Nova Notificação';
   const notificationOptions = {
     body: payload.notification.body || 'Você tem uma nova mensagem.',
-    icon: payload.notification.icon || '/icons/icon-192x192.png', // Ícone padrão
+    icon: payload.notification.icon || '/icons/icon-192x192.png',
+    vibrate: [100, 50, 100], // Adiciona um padrão de vibração
   };
 
   // Exibe a notificação para o usuário.

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/firebase-admin';
-import { startOfDay, subDays } from 'date-fns';
+import { startOfDay, subDays, endOfDay } from 'date-fns';
 import type { Order } from '@/types';
 
 export async function GET() {
@@ -13,24 +13,28 @@ export async function GET() {
     const weekData = Array(7).fill(0).map((_, i) => {
         const date = subDays(today, i);
         return {
-            date: date.toISOString().split('T')[0],
+            date: date.toISOString().split('T')[0], // YYYY-MM-DD for matching
             revenue: 0,
-            name: date.toLocaleDateString('pt-BR', { weekday: 'short' })
+            name: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
         };
     }).reverse();
 
     const sevenDaysAgo = startOfDay(subDays(today, 6)).toISOString();
+    const todayEnd = endOfDay(today).toISOString();
 
     const ordersCollection = db.collection('orders');
+    // Fetch all orders from the last 7 days
     const snapshot = await ordersCollection
         .where('timestamp', '>=', sevenDaysAgo)
+        .where('timestamp', '<=', todayEnd)
         .get();
 
-    snapshot.docs.forEach(doc => {
+    snapshot.forEach(doc => {
         const order = doc.data() as Order;
-        if (order.status !== 'Cancelado' && order.timestamp) {
-            const orderDateStr = new Date(order.timestamp).toISOString().split('T')[0];
-            const dayData = weekData.find(d => d.date === orderDateStr);
+        // Filter out Cancelled and Arquivado orders in the code
+        if (order.status !== 'Cancelado' && order.status !== 'Arquivado' && order.timestamp) {
+            const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
+            const dayData = weekData.find(d => d.date === orderDate);
             if (dayData) {
                 dayData.revenue += order.total;
             }

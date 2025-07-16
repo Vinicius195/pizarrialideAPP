@@ -109,11 +109,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
           setCurrentUser(userProfile);
 
           // Setup realtime listeners
-          const collections = {
+          const collections: { [key: string]: (data: any) => void } = {
             users: setUsers,
             products: setProducts,
             customers: setCustomers,
-            orders: setOrders,
           };
 
           const unsubscribes = Object.entries(collections).map(([name, setter]) => {
@@ -123,6 +122,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
               setter(data);
             });
           });
+
+          // Special listener for orders to filter out archived ones
+          const ordersQuery = query(collection(db, 'orders'), where('status', '!=', 'Arquivado'));
+          const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
+            const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+            setOrders(ordersData);
+          });
+          unsubscribes.push(ordersUnsubscribe);
           
           setIsLoading(false);
 

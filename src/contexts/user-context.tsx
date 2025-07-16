@@ -137,10 +137,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           return () => unsubscribes.forEach(unsub => unsub());
 
         } catch (error: any) {
-          toast({ variant: 'destructive', title: 'Falha no Acesso', description: error.message, duration: 10000 });
-          await signOut(auth);
-          setCurrentUser(null);
-          setIsLoading(false);
+          console.error("Failed to fetch user profile:", error);
         }
       } else {
         setCurrentUser(null);

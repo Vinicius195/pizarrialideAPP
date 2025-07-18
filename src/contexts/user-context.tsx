@@ -137,7 +137,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
           return () => unsubscribes.forEach(unsub => unsub());
 
         } catch (error: any) {
-          console.error("Failed to fetch user profile:", error);
+          console.error("Failed to fetch user profile or user not approved:", error);
+          toast({
+            variant: "destructive",
+            title: "Falha na autenticação",
+            description: error.message || "Não foi possível verificar seu perfil. Tente novamente.",
+          });
+          await signOut(auth); // Clear the invalid auth state
+          setCurrentUser(null);
+          setIsLoading(false); // Ensure loading completes even on error
         }
       } else {
         setCurrentUser(null);

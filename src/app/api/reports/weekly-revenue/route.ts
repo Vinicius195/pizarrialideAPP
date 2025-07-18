@@ -31,8 +31,9 @@ export async function GET() {
 
     snapshot.forEach(doc => {
         const order = doc.data() as Order;
-        // Filter out Cancelled and Arquivado orders in the code
-        if (order.status !== 'Cancelado' && order.status !== 'Arquivado' && order.timestamp) {
+        // Only exclude "Cancelled" orders from revenue calculation.
+        // Any other status is considered valid for revenue.
+        if (order.status !== 'Cancelado' && order.timestamp) {
             const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
             const dayData = weekData.find(d => d.date === orderDate);
             if (dayData) {

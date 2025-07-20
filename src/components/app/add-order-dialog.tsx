@@ -135,12 +135,37 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, onUpdate, order }
         },
     });
 
-    // This effect resets the form to a clean state every time the dialog opens.
+    // This effect resets the form to appropriate values when the dialog opens or when editing different orders.
     useEffect(() => {
-        if(open) {
-            form.reset();
+        if (open) {
+            if (isEditMode && order) {
+                // When editing, populate form with order data
+                const orderData: AddOrderFormValues = {
+                    customerName: order.customerName,
+                    customerPhone: order.customerPhone || '',
+                    orderType: order.orderType,
+                    items: [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }], // Reset to default items for editing
+                    addressType: order.locationLink ? 'link' : 'manual',
+                    address: order.address || '',
+                    locationLink: order.locationLink || '',
+                    notes: order.notes || '',
+                };
+                form.reset(orderData);
+            } else {
+                // When adding new order, reset to default values
+                form.reset({
+                    customerName: '',
+                    customerPhone: '',
+                    orderType: 'retirada',
+                    items: [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }],
+                    addressType: 'manual',
+                    address: '',
+                    locationLink: '',
+                    notes: '',
+                });
+            }
         }
-    }, [open, form]);
+    }, [open, isEditMode, order?.id, form]);
 
     const { control, watch, setValue, trigger, handleSubmit } = form;
     const { fields, append, remove } = useFieldArray({ control, name: 'items' });

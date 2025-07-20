@@ -1,6 +1,7 @@
 'use client';
 
 import { useForm, useFieldArray } from 'react-hook-form';
+import { useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -101,10 +102,16 @@ export function AddProductDialog({ open, onOpenChange, onSubmit, product }: AddP
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
-    // The form is initialized here ONCE with the correct default values.
-    // This completely removes the need for the problematic useEffect.
-    defaultValues: get_default_values(product),
+    defaultValues: get_default_values(null), // Always start with empty defaults
   });
+
+  // Reset form with appropriate values when dialog opens or product changes
+  useEffect(() => {
+    if (open) {
+      const values = get_default_values(product);
+      form.reset(values);
+    }
+  }, [open, product?.id, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import type { Product, PizzaSize } from '@/types';
 import { MoreHorizontal, PlusCircle, Search, Pizza } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -16,11 +15,12 @@ import { useUser } from '@/contexts/user-context';
 import { Input } from '@/components/ui/input';
 import { getMockSettings } from '@/lib/settings-data';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 
 export default function ProdutosPage() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // Clean, separated state management for stability
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
@@ -46,7 +46,7 @@ export default function ProdutosPage() {
         updateProduct(editingProduct.id, data);
         toast({
             title: "Produto Atualizado!",
-            description: `O produto "${data.name}" foi atualizado com sucesso.`,
+            description: `O produto "${editingProduct.name}" foi atualizado com sucesso.`,
         });
     } else {
         addProduct(data);
@@ -55,9 +55,12 @@ export default function ProdutosPage() {
             description: `O produto "${data.name}" foi adicionado com sucesso.`,
         });
     }
+    // Close the relevant dialog
+    setIsAddDialogOpen(false);
+    setEditingProduct(null);
   };
 
-  // Employee-facing menu view
+  // Employee-facing menu view (unchanged)
   if (!isManager) {
     const availableProducts = products.filter(p => p.isAvailable);
 
@@ -100,7 +103,6 @@ export default function ProdutosPage() {
             />
           </div>
         </div>
-
         <div className="space-y-8">
           {categoryOrder.map((category) => (
             groupedByCategory[category] && groupedByCategory[category].length > 0 && (
@@ -113,9 +115,7 @@ export default function ProdutosPage() {
                     <Card key={product.id} className="shadow-md flex flex-col justify-between">
                       <CardHeader>
                         <CardTitle className="text-lg font-headline">{product.name}</CardTitle>
-                        {product.description && (
-                          <CardDescription className="pt-1 text-sm">{product.description}</CardDescription>
-                        )}
+                        {product.description && (<CardDescription className="pt-1 text-sm">{product.description}</CardDescription>)}
                       </CardHeader>
                       <CardContent>
                         {product.sizes ? (
@@ -125,20 +125,11 @@ export default function ProdutosPage() {
                                .map(([size, price]) => (
                               <div key={size} className="flex justify-between items-center text-sm">
                                 <span className="text-muted-foreground capitalize">{size}</span>
-                                <span className="font-semibold">
-                                  {Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                </span>
+                                <span className="font-semibold">{Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                               </div>
                             ))}
                           </div>
-                        ) : product.price ? (
-                           <div className="text-xl font-bold text-right">
-                              {Number(product.price).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                           </div>
-                        ) : null}
+                        ) : product.price ? (<div className="text-xl font-bold text-right">{Number(product.price).toLocaleString('pt-BR', {style: 'currency',currency: 'BRL',})}</div>) : null}
                       </CardContent>
                     </Card>
                   ))}
@@ -146,13 +137,7 @@ export default function ProdutosPage() {
               </section>
             )
           ))}
-          {filteredProducts.length === 0 && (
-               <div className="text-center text-muted-foreground py-16">
-                  <Pizza className="mx-auto h-12 w-12" />
-                  <h3 className="mt-4 text-lg font-semibold">Nenhum produto encontrado</h3>
-                  <p className="mt-1 text-sm">Tente refinar sua busca. Apenas produtos disponíveis são exibidos.</p>
-              </div>
-          )}
+          {filteredProducts.length === 0 && (<div className="text-center text-muted-foreground py-16"><Pizza className="mx-auto h-12 w-12" /><h3 className="mt-4 text-lg font-semibold">Nenhum produto encontrado</h3><p className="mt-1 text-sm">Tente refinar sua busca. Apenas produtos disponíveis são exibidos.</p></div>)}
         </div>
       </div>
     );
@@ -161,16 +146,6 @@ export default function ProdutosPage() {
   // Admin-facing management view
   const handleToggleAvailable = (productId: string, isAvailable: boolean) => {
     toggleProductAvailability(productId, isAvailable);
-  };
-  
-  const handleOpenAddDialog = () => {
-    setEditingProduct(null);
-    setIsDialogOpen(true);
-  };
-  
-  const handleOpenEditDialog = (product: Product) => {
-    setEditingProduct(product);
-    setIsDialogOpen(true);
   };
 
   const handleDuplicateProduct = (product: Product) => {
@@ -227,12 +202,23 @@ export default function ProdutosPage() {
 
   return (
     <>
+      {/* ADD DIALOG: Controlled by a simple boolean */}
       <AddProductDialog
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
         onSubmit={handleSubmitProduct}
-        product={editingProduct}
       />
+      
+      {/* EDIT DIALOG: Renders a fresh dialog with a unique key, ensuring no state conflicts */}
+      {editingProduct && (
+        <AddProductDialog
+            key={editingProduct.id}
+            open={!!editingProduct}
+            onOpenChange={() => setEditingProduct(null)}
+            onSubmit={handleSubmitProduct}
+            product={editingProduct}
+        />
+      )}
       
        <AlertDialog open={!!deletingProduct} onOpenChange={(open) => !open && setDeletingProduct(null)}>
         <AlertDialogContent>
@@ -271,13 +257,12 @@ export default function ProdutosPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <Button onClick={handleOpenAddDialog} className="w-full sm:w-auto">
+                <Button onClick={() => setIsAddDialogOpen(true)} className="w-full sm:w-auto">
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Adicionar Produto
                 </Button>
             </div>
         </div>
-
         <div className="space-y-8">
           {categoryOrder.map((category) => (
             groupedProducts[category] && groupedProducts[category].length > 0 && (
@@ -302,7 +287,7 @@ export default function ProdutosPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => handleOpenEditDialog(product)}>
+                              <DropdownMenuItem onClick={() => setEditingProduct(product)}>
                                 Editar
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDuplicateProduct(product)}>
@@ -319,31 +304,9 @@ export default function ProdutosPage() {
                           </DropdownMenu>
                         </CardHeader>
                         <CardContent className="pt-0 pb-4 px-6">
-                          {product.description && (
-                            <p className="text-sm text-muted-foreground my-2 line-clamp-2" title={product.description}>
-                              {product.description}
-                            </p>
-                          )}
-                          {product.sizes && (
-                            <div className="my-2 space-y-1">
-                              {Object.entries(product.sizes).map(([size, price]) => (
-                                <div key={size} className="flex justify-between items-center text-sm">
-                                  <span className="text-muted-foreground capitalize">{size}</span>
-                                  <span className="font-semibold">
-                                    {Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                           {product.price && (
-                              <div className="text-lg font-bold text-right pt-2">
-                                {Number(product.price).toLocaleString('pt-BR', {
-                                  style: 'currency',
-                                  currency: 'BRL',
-                                })}
-                              </div>
-                            )}
+                          {product.description && (<p className="text-sm text-muted-foreground my-2 line-clamp-2" title={product.description}>{product.description}</p>)}
+                          {product.sizes && (<div className="my-2 space-y-1">{Object.entries(product.sizes).map(([size, price]) => (<div key={size} className="flex justify-between items-center text-sm"><span className="text-muted-foreground capitalize">{size}</span><span className="font-semibold">{Number(price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>))}</div>)}
+                           {product.price && (<div className="text-lg font-bold text-right pt-2">{Number(product.price).toLocaleString('pt-BR', {style: 'currency',currency: 'BRL',})}</div>)}
                         </CardContent>
                       </div>
                       <CardFooter className="flex justify-between items-center bg-muted/50 py-3 px-4 border-t">
@@ -363,13 +326,7 @@ export default function ProdutosPage() {
               </section>
             )
           ))}
-           {filteredProductsForAdmin.length === 0 && searchQuery && (
-             <div className="text-center text-muted-foreground py-16">
-                <Pizza className="mx-auto h-12 w-12" />
-                <h3 className="mt-4 text-lg font-semibold">Nenhum produto encontrado</h3>
-                <p className="mt-1 text-sm">Tente refinar sua busca ou adicione um novo produto.</p>
-            </div>
-          )}
+           {filteredProductsForAdmin.length === 0 && searchQuery && (<div className="text-center text-muted-foreground py-16"><Pizza className="mx-auto h-12 w-12" /><h3 className="mt-4 text-lg font-semibold">Nenhum produto encontrado</h3><p className="mt-1 text-sm">Tente refinar sua busca ou adicione um novo produto.</p></div>)}
         </div>
       </div>
     </>
@@ -389,22 +346,17 @@ function ProdutosPageSkeleton() {
             <Skeleton className="h-10 w-40" />
           </div>
         </div>
-
         <div className="space-y-8">
             <section>
                 <Skeleton className="h-8 w-32 mb-4" />
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                        <Skeleton key={i} className="h-[250px] w-full" />
-                    ))}
+                    {Array.from({ length: 5 }).map((_, i) => (<Skeleton key={i} className="h-[250px] w-full" />))}
                 </div>
             </section>
              <section>
                 <Skeleton className="h-8 w-32 mb-4" />
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-                    {Array.from({ length: 2 }).map((_, i) => (
-                        <Skeleton key={i} className="h-[250px] w-full" />
-                    ))}
+                    {Array.from({ length: 2 }).map((_, i) => (<Skeleton key={i} className="h-[250px] w-full" />))}
                 </div>
             </section>
         </div>

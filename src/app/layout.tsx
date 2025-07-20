@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 export const metadata: Metadata = {
   title: 'Pizzaria Bela Massa',
   description: 'Gerenciador para sua pizzaria',
-  manifest: '/manifest.webmanifest', // Adicionado o caminho para o manifesto
+  manifest: '/manifest.webmanifest',
 };
 
 const fontSans = PT_Sans({
@@ -32,6 +32,10 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
+        <meta 
+          name="viewport" 
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" 
+        />
         <meta name="theme-color" content="#000000" />
       </head>
       <body

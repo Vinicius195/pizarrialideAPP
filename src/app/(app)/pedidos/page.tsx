@@ -171,8 +171,9 @@ function PedidosPageContent() {
   const isMobile = useIsMobile();
   const statusFilter = searchParams.get('status');
   
-  const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isClearAllDialogOpen, setIsClearAllDialogOpen] = useState(false);
@@ -199,36 +200,19 @@ function PedidosPageContent() {
     setSelectedOrder(order);
   };
   
-  const handleOpenAddDialog = () => {
-    setEditingOrder(null);
-    setIsOrderDialogOpen(true);
-  };
-  
-  const handleOpenEditDialog = (order: Order) => {
-    setEditingOrder(order);
-    setIsOrderDialogOpen(true);
-  };
-
-  const handleSubmitOrder = (data: AddOrderFormValues) => {
-    if (editingOrder) {
-      updateOrder(editingOrder.id, data);
-    } else {
-      addOrder(data);
-    }
-    setIsOrderDialogOpen(false);
-    setEditingOrder(null);
-  };
-  
   const handleClearAllOrders = () => {
     deleteAllOrders();
     setIsClearAllDialogOpen(false);
   };
 
-  const handleDialogClose = (open: boolean) => {
-    if (!open) {
-      setEditingOrder(null);
-    }
-    setIsOrderDialogOpen(open);
+  const handleOrderSubmit = (data: AddOrderFormValues) => {
+    addOrder(data);
+    setIsAddDialogOpen(false);
+  };
+
+  const handleOrderUpdate = (orderId: string, data: AddOrderFormValues) => {
+    updateOrder(orderId, data);
+    setEditingOrder(null);
   };
 
   const filteredOrders = orders.filter(order =>
@@ -275,12 +259,26 @@ function PedidosPageContent() {
 
   return (
     <>
+      {/* ADD DIALOG: Controlled by a simple boolean */}
       <AddOrderDialog 
-        open={isOrderDialogOpen} 
-        onOpenChange={handleDialogClose}
-        onSubmit={handleSubmitOrder}
-        order={editingOrder}
+        open={isAddDialogOpen} 
+        onOpenChange={setIsAddDialogOpen}
+        onSubmit={handleOrderSubmit}
+        onUpdate={handleOrderUpdate}
       />
+
+      {/* EDIT DIALOG: Renders a fresh dialog with a unique key, ensuring no state conflicts */}
+      {editingOrder && (
+        <AddOrderDialog 
+            key={editingOrder.id}
+            open={!!editingOrder} 
+            onOpenChange={() => setEditingOrder(null)}
+            onSubmit={handleOrderSubmit}
+            onUpdate={handleOrderUpdate}
+            order={editingOrder}
+        />
+      )}
+
       <OrderDetailsDialog 
         order={selectedOrder}
         open={!!selectedOrder}
@@ -316,7 +314,7 @@ function PedidosPageContent() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button onClick={handleOpenAddDialog}>
+          <Button onClick={() => setIsAddDialogOpen(true)}>
             <PlusCircle className="mr-2 h-4 w-4" />
             Adicionar Pedido
           </Button>
@@ -337,7 +335,7 @@ function PedidosPageContent() {
                     <TabsTrigger key={status} value={status} className={cn('font-semibold', getStatusTabClasses(status))}>{status}</TabsTrigger>
                 ))}
             </TabsList>
-            <TabsContent value="Todos" className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <TabsContent value="Todos" className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredOrders.map(order => (
                 <OrderCard 
                   key={order.id} 
@@ -345,12 +343,12 @@ function PedidosPageContent() {
                   onAdvanceStatus={advanceOrderStatus} 
                   onViewDetails={handleViewDetails}
                   onCancelOrder={cancelOrder}
-                  onEditOrder={handleOpenEditDialog}
+                  onEditOrder={setEditingOrder}
                 />
             ))}
             </TabsContent>
             {orderStatuses.map(status => (
-            <TabsContent key={status} value={status} className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <TabsContent key={status} value={status} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredOrders.filter(order => order.status === status).map(order => (
                 <OrderCard 
                     key={order.id} 
@@ -358,7 +356,7 @@ function PedidosPageContent() {
                     onAdvanceStatus={advanceOrderStatus} 
                     onViewDetails={handleViewDetails}
                     onCancelOrder={cancelOrder}
-                    onEditOrder={handleOpenEditDialog}
+                    onEditOrder={setEditingOrder}
                 />
                 ))}
             </TabsContent>
@@ -401,7 +399,7 @@ function PedidosPageContent() {
                         onAdvanceStatus={advanceOrderStatus}
                         onViewDetails={handleViewDetails}
                         onCancelOrder={cancelOrder}
-                        onEditOrder={handleOpenEditDialog}
+                        onEditOrder={setEditingOrder}
                       />
                     ))
                   ) : (
@@ -434,7 +432,7 @@ function PedidosPageContent() {
                                       onAdvanceStatus={advanceOrderStatus}
                                       onViewDetails={handleViewDetails}
                                       onCancelOrder={cancelOrder}
-                                      onEditOrder={handleOpenEditDialog}
+                                      onEditOrder={setEditingOrder}
                                   />
                               ))
                           ) : (

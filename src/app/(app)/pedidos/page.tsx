@@ -1,7 +1,7 @@
 'use client';
 
-import React, { Suspense, useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -13,7 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button, buttonVariants } from '@/components/ui/button';
 import type { Order, OrderStatus } from '@/types';
-import { Clock, PlusCircle, MoreHorizontal, Search, MessageSquare, Trash2, Edit } from 'lucide-react';
+import { Clock, PlusCircle, MoreHorizontal, Search, MessageSquare, Trash2, Edit, ChevronDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AddOrderDialog, type AddOrderFormValues } from '@/components/app/add-order-dialog';
 import { OrderDetailsDialog } from '@/components/app/order-details-dialog';
@@ -29,6 +29,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { useUser, kanbanStatuses } from '@/contexts/user-context';
@@ -37,6 +39,7 @@ import { cn, formatTimestamp } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
+// Minor change: Passed onEditOrder to the card
 function OrderCard({ 
   order, 
   onAdvanceStatus, 
@@ -155,8 +158,68 @@ function OrderCard({
   );
 }
 
+// This is the new, reusable filter component for the admin's mobile view.
+function AdminMobileFilter({
+    activeFilter,
+    onFilterChange,
+    statuses,
+    orders,
+}: {
+    activeFilter: string;
+    onFilterChange: (newStatus: string) => void;
+    statuses: string[];
+    orders: Order[];
+}) {
+
+    const getStatusColorClass = (status: string): string => {
+        switch (status) {
+            case 'Recebido': return 'bg-chart-3';
+            case 'Preparando': return 'bg-chart-4';
+            case 'Pronto': return 'bg-chart-2';
+            case 'Em Entrega': return 'bg-primary';
+            case 'Entregue': return 'bg-slate-500';
+            case 'Cancelado': return 'bg-destructive';
+            default: return 'bg-muted-foreground';
+        }
+    };
+    
+    const countOrdersByStatus = (status: string): number => {
+        if (status === 'Todos') return orders.length;
+        return orders.filter(order => order.status === status).length;
+    }
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        <span className={cn("h-3 w-3 rounded-full", getStatusColorClass(activeFilter))} />
+                        <span className="font-semibold">{activeFilter}</span>
+                    </div>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
+                <DropdownMenuRadioGroup value={activeFilter} onValueChange={onFilterChange}>
+                    {statuses.map(status => (
+                        <DropdownMenuRadioItem key={status} value={status} className="flex justify-between items-center gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className={cn("h-3 w-3 rounded-full", getStatusColorClass(status))} />
+                                <span>{status}</span>
+                            </div>
+                            <Badge variant="secondary">{countOrdersByStatus(status)}</Badge>
+                        </DropdownMenuRadioItem>
+                    ))}
+                </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+
 function PedidosPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { 
     currentUser, 
     orders, 
@@ -178,8 +241,8 @@ function PedidosPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isClearAllDialogOpen, setIsClearAllDialogOpen] = useState(false);
   
-  const allTabs = ['Todos', ...orderStatuses];
-  const defaultValue = statusFilter && allTabs.includes(statusFilter) ? statusFilter : 'Todos';
+  const allTabs = useMemo(() => ['Todos', ...orderStatuses], [orderStatuses]);
+  const activeFilter = statusFilter && allTabs.includes(statusFilter) ? statusFilter : 'Todos';
   
   useEffect(() => {
     const orderIdToOpen = searchParams.get('open');
@@ -206,40 +269,46 @@ function PedidosPageContent() {
   };
 
   const handleOrderSubmit = (data: AddOrderFormValues) => {
-    addOrder(data);
+    if (editingOrder) {
+        updateOrder(editingOrder.id, data);
+        setEditingOrder(null);
+    } else {
+        addOrder(data);
+    }
     setIsAddDialogOpen(false);
   };
 
-  const handleOrderUpdate = (orderId: string, data: AddOrderFormValues) => {
-    updateOrder(orderId, data);
-    setEditingOrder(null);
+  const handleEditClick = (order: Order) => {
+    setEditingOrder(order);
+    setIsAddDialogOpen(true);
   };
+  
+  const handleFilterChange = (newStatus: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (newStatus === 'Todos') {
+        params.delete('status');
+    } else {
+        params.set('status', newStatus);
+    }
+    // We use router.push to update the URL, triggering a re-render
+    router.push(`/pedidos?${params.toString()}`);
+  }
 
-  const filteredOrders = orders.filter(order =>
-    order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (order.orderNumber && order.orderNumber.toString().includes(searchQuery))
-  );
-
-  const ordersByStatus = (status: OrderStatus) => {
-    return filteredOrders.filter((order: Order) => order.status === status);
-  };
+  const filteredOrders = useMemo(() => orders.filter(order =>
+    (order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (order.orderNumber && order.orderNumber.toString().includes(searchQuery))) &&
+    (activeFilter === 'Todos' || order.status === activeFilter)
+  ), [orders, searchQuery, activeFilter]);
   
   const getStatusTabClasses = (status: OrderStatus): string => {
     switch (status) {
-      case 'Recebido':
-        return 'bg-chart-3/10 text-chart-3 data-[state=active]:bg-chart-3 data-[state=active]:text-white';
-      case 'Preparando':
-        return 'bg-chart-4/10 text-chart-4 data-[state=active]:bg-chart-4 data-[state=active]:text-white';
-      case 'Pronto':
-        return 'bg-chart-2/10 text-chart-2 data-[state=active]:bg-chart-2 data-[state=active]:text-white';
-      case 'Em Entrega':
-        return 'bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground';
-      case 'Entregue':
-        return 'bg-slate-400/10 text-slate-600 dark:text-slate-300 data-[state=active]:bg-slate-500 data-[state=active]:text-white';
-      case 'Cancelado':
-        return 'bg-destructive/10 text-destructive data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground';
-      default:
-        return '';
+      case 'Recebido': return 'bg-chart-3/10 text-chart-3 data-[state=active]:bg-chart-3 data-[state=active]:text-white';
+      case 'Preparando': return 'bg-chart-4/10 text-chart-4 data-[state=active]:bg-chart-4 data-[state=active]:text-white';
+      case 'Pronto': return 'bg-chart-2/10 text-chart-2 data-[state=active]:bg-chart-2 data-[state=active]:text-white';
+      case 'Em Entrega': return 'bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground';
+      case 'Entregue': return 'bg-slate-400/10 text-slate-600 dark:text-slate-300 data-[state=active]:bg-slate-500 data-[state=active]:text-white';
+      case 'Cancelado': return 'bg-destructive/10 text-destructive data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground';
+      default: return '';
     }
   };
 
@@ -257,112 +326,73 @@ function PedidosPageContent() {
     );
   }
 
+  const AdminDesktopView = () => (
+     <Tabs value={activeFilter} onValueChange={handleFilterChange} className="w-full">
+        <TabsList className="h-auto flex-wrap justify-start gap-1">
+            <TabsTrigger value="Todos" className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">Todos</TabsTrigger>
+            {orderStatuses.map(status => (
+                <TabsTrigger key={status} value={status} className={cn('font-semibold', getStatusTabClasses(status))}>{status}</TabsTrigger>
+            ))}
+        </TabsList>
+        <TabsContent value={activeFilter} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredOrders.map(order => (
+                <OrderCard key={order.id} order={order} onAdvanceStatus={advanceOrderStatus} onViewDetails={handleViewDetails} onCancelOrder={cancelOrder} onEditOrder={handleEditClick}/>
+            ))}
+        </TabsContent>
+    </Tabs>
+  );
+
   return (
     <>
-      {/* ADD DIALOG: Controlled by a simple boolean */}
-      <AddOrderDialog 
-        open={isAddDialogOpen} 
-        onOpenChange={setIsAddDialogOpen}
-        onSubmit={handleOrderSubmit}
-        onUpdate={handleOrderUpdate}
-      />
-
-      {/* EDIT DIALOG: Renders a fresh dialog with a unique key, ensuring no state conflicts */}
-      {editingOrder && (
-        <AddOrderDialog 
-            key={editingOrder.id}
-            open={!!editingOrder} 
-            onOpenChange={() => setEditingOrder(null)}
-            onSubmit={handleOrderSubmit}
-            onUpdate={handleOrderUpdate}
-            order={editingOrder}
-        />
-      )}
-
-      <OrderDetailsDialog 
-        order={selectedOrder}
-        open={!!selectedOrder}
-        onOpenChange={() => setSelectedOrder(null)}
-      />
-
+      <AddOrderDialog open={isAddDialogOpen} onOpenChange={(open) => { if (!open) { setEditingOrder(null); } setIsAddDialogOpen(open); }} onSubmit={handleOrderSubmit} order={editingOrder} />
+      <OrderDetailsDialog order={selectedOrder} open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)} />
       <AlertDialog open={isClearAllDialogOpen} onOpenChange={setIsClearAllDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Essa ação irá arquivar permanentemente todos os pedidos ativos. O histórico de clientes será mantido, mas os pedidos em si serão removidos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearAllOrders} className={buttonVariants({ variant: "destructive" })}>
-              Sim, arquivar tudo
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+          <AlertDialogContent>
+              <AlertDialogHeader><AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle><AlertDialogDescription>Essa ação irá arquivar permanentemente todos os pedidos ativos. O histórico de clientes será mantido, mas os pedidos em si serão removidos.</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleClearAllOrders} className={buttonVariants({ variant: "destructive" })}>Sim, arquivar tudo</AlertDialogAction></AlertDialogFooter>
+          </AlertDialogContent>
       </AlertDialog>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h1 className="text-3xl font-bold font-headline">Pedidos</h1>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative flex-grow">
+      <div className="space-y-4 mb-6">
+        <div className="flex items-center justify-between gap-4">
+            <h1 className="text-3xl font-bold font-headline">Pedidos</h1>
+            <div className="flex items-center gap-2">
+                <Button onClick={() => { setEditingOrder(null); setIsAddDialogOpen(true); }} size={isMobile ? 'icon' : 'default'}>
+                    <PlusCircle className={cn(isMobile ? 'h-4 w-4' : 'mr-2 h-4 w-4')} />
+                    <span className="hidden sm:inline">Adicionar Pedido</span>
+                </Button>
+                {isManager && (
+                    <Button variant="destructive" onClick={() => setIsClearAllDialogOpen(true)} size={isMobile ? 'icon' : 'default'}>
+                        <Trash2 className={cn(isMobile ? 'h-4 w-4' : 'mr-2 h-4 w-4')} />
+                        <span className="hidden sm:inline">Limpar Pedidos</span>
+                    </Button>
+                )}
+            </div>
+        </div>
+        <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar cliente ou nº do pedido..."
-              className="pl-10"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Adicionar Pedido
-          </Button>
-          {isManager && (
-            <Button variant="destructive" onClick={() => setIsClearAllDialogOpen(true)}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Limpar Pedidos
-            </Button>
-          )}
+            <Input placeholder="Buscar cliente ou nº do pedido..." className="pl-10" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
       </div>
       
       {isManager ? (
-        <Tabs defaultValue={defaultValue} className="w-full">
-            <TabsList className="h-auto flex-wrap justify-start gap-1">
-                <TabsTrigger value="Todos" className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">Todos</TabsTrigger>
-                {orderStatuses.map(status => (
-                    <TabsTrigger key={status} value={status} className={cn('font-semibold', getStatusTabClasses(status))}>{status}</TabsTrigger>
-                ))}
-            </TabsList>
-            <TabsContent value="Todos" className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredOrders.map(order => (
-                <OrderCard 
-                  key={order.id} 
-                  order={order} 
-                  onAdvanceStatus={advanceOrderStatus} 
-                  onViewDetails={handleViewDetails}
-                  onCancelOrder={cancelOrder}
-                  onEditOrder={setEditingOrder}
+        isMobile ? (
+            <div className="space-y-4">
+                <AdminMobileFilter 
+                    activeFilter={activeFilter} 
+                    onFilterChange={handleFilterChange} 
+                    statuses={allTabs} 
+                    orders={orders} 
                 />
-            ))}
-            </TabsContent>
-            {orderStatuses.map(status => (
-            <TabsContent key={status} value={status} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filteredOrders.filter(order => order.status === status).map(order => (
-                <OrderCard 
-                    key={order.id} 
-                    order={order} 
-                    onAdvanceStatus={advanceOrderStatus} 
-                    onViewDetails={handleViewDetails}
-                    onCancelOrder={cancelOrder}
-                    onEditOrder={setEditingOrder}
-                />
-                ))}
-            </TabsContent>
-            ))}
-        </Tabs>
+                <div className="grid grid-cols-1 gap-4">
+                    {filteredOrders.map(order => (
+                        <OrderCard key={order.id} order={order} onAdvanceStatus={advanceOrderStatus} onViewDetails={handleViewDetails} onCancelOrder={cancelOrder} onEditOrder={handleEditClick} />
+                    ))}
+                </div>
+            </div>
+        ) : <AdminDesktopView />
       ) : (
+        // Employee View logic remains the same
         <>
           {isMobile === undefined && <KanbanSkeleton />}
           {isMobile === true && (
@@ -378,29 +408,17 @@ function PedidosPageContent() {
                       <Icon className="h-5 w-5" />
                       <span className="text-xs font-semibold">{status}</span>
                     </div>
-                    <Badge
-                      className={cn(
-                        "w-6 h-6 flex items-center justify-center p-0 rounded-full text-xs",
-                        ordersByStatus(status).length > 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                      )}
-                    >
-                      {ordersByStatus(status).length}
+                    <Badge className={cn("w-6 h-6 flex items-center justify-center p-0 rounded-full text-xs", (orders.filter(o => o.status === status)).length > 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                      {(orders.filter(o => o.status === status)).length}
                     </Badge>
                   </TabsTrigger>
                 ))}
               </TabsList>
               {kanbanStatuses.map(({ status, icon: Icon }) => (
                 <TabsContent key={status} value={status} className="mt-4 grid gap-4">
-                  {ordersByStatus(status).length > 0 ? (
-                    ordersByStatus(status).map((order) => (
-                      <OrderCard
-                        key={order.id}
-                        order={order}
-                        onAdvanceStatus={advanceOrderStatus}
-                        onViewDetails={handleViewDetails}
-                        onCancelOrder={cancelOrder}
-                        onEditOrder={setEditingOrder}
-                      />
+                  {(orders.filter(o => o.status === status)).length > 0 ? (
+                    (orders.filter(o => o.status === status)).map((order) => (
+                      <OrderCard key={order.id} order={order} onAdvanceStatus={advanceOrderStatus} onViewDetails={handleViewDetails} onCancelOrder={cancelOrder} onEditOrder={handleEditClick} />
                     ))
                   ) : (
                     <div className="flex flex-col items-center justify-center h-64 rounded-md text-sm text-muted-foreground bg-muted/20">
@@ -417,29 +435,16 @@ function PedidosPageContent() {
               {kanbanStatuses.map(({status, icon: Icon, color}) => (
                   <Card key={status} className="w-full shadow-md">
                       <CardHeader className={cn("flex flex-row items-center justify-between p-3", color)}>
-                          <div className="flex items-center gap-2">
-                              <Icon className="h-5 w-5" />
-                              <h2 className="font-headline font-semibold text-lg">{status}</h2>
-                          </div>
-                          <Badge className="bg-white/20 hover:bg-white/30">{ordersByStatus(status).length}</Badge>
+                          <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><h2 className="font-headline font-semibold text-lg">{status}</h2></div>
+                          <Badge className="bg-white/20 hover:bg-white/30">{(orders.filter(o => o.status === status)).length}</Badge>
                       </CardHeader>
                       <CardContent className="p-3 space-y-4 min-h-[calc(100vh-320px)]">
-                          {ordersByStatus(status).length > 0 ? (
-                              ordersByStatus(status).map((order) => (
-                                  <OrderCard
-                                      key={order.id}
-                                      order={order}
-                                      onAdvanceStatus={advanceOrderStatus}
-                                      onViewDetails={handleViewDetails}
-                                      onCancelOrder={cancelOrder}
-                                      onEditOrder={setEditingOrder}
-                                  />
+                          {(orders.filter(o => o.status === status)).length > 0 ? (
+                              (orders.filter(o => o.status === status)).map((order) => (
+                                  <OrderCard key={order.id} order={order} onAdvanceStatus={advanceOrderStatus} onViewDetails={handleViewDetails} onCancelOrder={cancelOrder} onEditOrder={handleEditClick} />
                               ))
                           ) : (
-                              <div className="flex flex-col items-center justify-center h-48 rounded-md text-sm text-muted-foreground">
-                                  <Icon className="h-12 w-12 text-muted-foreground/30" />
-                                  <p className="mt-4">Nenhum pedido aqui.</p>
-                              </div>
+                              <div className="flex flex-col items-center justify-center h-48 rounded-md text-sm text-muted-foreground"><Icon className="h-12 w-12 text-muted-foreground/30" /><p className="mt-4">Nenhum pedido aqui.</p></div>
                           )}
                       </CardContent>
                   </Card>

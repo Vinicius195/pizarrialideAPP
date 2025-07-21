@@ -41,9 +41,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background text-foreground">
-        <div className="hidden md:block">
-            <AppSidebar />
-        </div>
+        <AppSidebar />
         <SidebarInset>
           <div className="flex h-full flex-col">
             <AppHeader />

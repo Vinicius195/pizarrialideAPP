@@ -1,11 +1,10 @@
 'use client';
 
-import { Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from '@/components/ui/sidebar';
+import { Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter, useSidebar } from '@/components/ui/sidebar';
 import { Pizza as PizzaIcon, Home, ClipboardList, Users, Settings, LifeBuoy, Bike, BarChart4 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUser } from '@/contexts/user-context';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 const allMenuItems = [
   { href: '/dashboard', label: 'Dashboard', icon: Home, roles: ['Administrador', 'Funcionário'] },
@@ -19,12 +18,18 @@ const allMenuItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const { currentUser } = useUser();
-  const isMobile = useIsMobile();
+  const { setOpenMobile, isMobile } = useSidebar();
 
   if (!currentUser) {
     return null;
   }
 
+  const handleLinkClick = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+  
   const menuItems = allMenuItems.filter(item => {
     const roleMatch = item.roles.includes(currentUser.role);
     if (item.label === 'Relatórios') {
@@ -51,7 +56,7 @@ export function AppSidebar() {
         <SidebarMenu>
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.href}>
-              <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
+              <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label} onClick={handleLinkClick}>
                 <Link href={item.href}>
                   <item.icon />
                   <span>{item.label}</span>
@@ -65,7 +70,7 @@ export function AppSidebar() {
         {currentUser.role === 'Administrador' && (
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={isActive('/configuracoes')} tooltip="Configurações">
+              <SidebarMenuButton asChild isActive={isActive('/configuracoes')} tooltip="Configurações" onClick={handleLinkClick}>
                 <Link href="/configuracoes">
                   <Settings />
                   <span>Configurações</span>
@@ -73,7 +78,7 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="Ajuda">
+              <SidebarMenuButton tooltip="Ajuda" onClick={handleLinkClick}>
                 <LifeBuoy />
                 <span>Ajuda</span>
               </SidebarMenuButton>

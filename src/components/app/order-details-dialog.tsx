@@ -14,9 +14,10 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { Order, OrderStatus } from '@/types';
 import { cn } from '@/lib/utils';
-import { Clock, User, Tag, ShoppingCart, DollarSign, Bike, Store, MapPin, Link as LinkIcon, MessageSquare, Phone, Hash } from 'lucide-react';
+import { Clock, User, Tag, ShoppingCart, DollarSign, Bike, Store, MapPin, Link as LinkIcon, MessageSquare, Phone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
+import { format } from 'date-fns';
 
 interface OrderDetailsDialogProps {
   order: Order | null;
@@ -82,6 +83,8 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
     }
     return 0;
   };
+  
+  const formattedTime = order.timestamp ? format(new Date(order.timestamp), 'HH:mm') : 'N/A';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -105,7 +108,7 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
                 </DetailRow>
             )}
              <DetailRow icon={Clock} label="Horário">
-                {order.timestamp}
+                {formattedTime}
             </DetailRow>
             <DetailRow icon={Tag} label="Status">
                 <Badge variant="outline" className={cn("text-xs", getStatusBadgeClasses(order.status))}>
@@ -114,9 +117,6 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
             </DetailRow>
             <DetailRow icon={order.orderType === 'entrega' ? Bike : Store} label="Tipo">
                 <span className="capitalize">{order.orderType}</span>
-            </DetailRow>
-            <DetailRow icon={Hash} label="ID do Pedido">
-                <span className="font-mono text-xs text-muted-foreground">{order.id}</span>
             </DetailRow>
           </div>
           
@@ -157,15 +157,18 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
                 <ShoppingCart className="h-4 w-4" />
                 <span className="text-sm font-medium">Itens</span>
             </div>
-            <ul className="space-y-2 text-sm text-foreground/90 pl-6">
+            <ul className="space-y-3 border bg-muted/30 rounded-lg p-3">
               {order.items.map((item, index) => {
                 const price = getItemPrice(item.productName, item.size);
                 return (
                     <li key={index} className="flex justify-between items-baseline">
                         <div className="flex-1">
-                          <span>{item.quantity}x {item.productName} {item.size && <span className='capitalize'>({item.size})</span>}</span>
+                          <span className="text-base font-bold text-foreground">
+                            {item.quantity}x {item.productName} 
+                            {item.size && <span className='capitalize font-medium text-muted-foreground'> ({item.size})</span>}
+                          </span>
                         </div>
-                        <span className="font-mono text-xs text-muted-foreground text-right pl-2">
+                        <span className="font-mono text-sm font-semibold text-foreground text-right pl-2">
                           {price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </span>
                     </li>

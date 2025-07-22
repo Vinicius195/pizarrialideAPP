@@ -276,10 +276,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const transformOrderItems = (items: AddOrderFormValues['items'], products: Product[]): OrderItem[] => items.map(item => {
     const p1 = products.find(p => p.id === item.productId);
     let productName = p1?.name ?? 'N/A';
+    
     if (item.isHalfHalf && item.product2Id) {
       const p2 = products.find(p => p.id === item.product2Id);
-      productName = `½ ${productName}, ½ ${p2?.name ?? ''}`;
+      const name1 = p1?.name.replace('Pizza ', '') || '';
+      const name2 = p2?.name.replace('Pizza ', '') || '';
+      productName = `Meio a Meio: ${name1} / ${name2}`;
     }
+    
     return { productName, quantity: item.quantity, size: item.size };
   });
 

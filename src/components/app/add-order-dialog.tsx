@@ -28,7 +28,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Order, Product, PizzaSize, Customer } from '@/types';
 import { Check, ChevronsUpDown, Link, Phone, PlusCircle, Trash2, Loader2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -123,7 +123,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const customerPhone = watch('customerPhone');
   
   const availableProducts = useMemo(() => allProducts.filter(p => p.isAvailable), [allProducts]);
-  const availablePizzas = useMemo(() => availableProducts.filter(p => p.category === 'Pizza'), [availableProducts]);
+  const allPizzas = useMemo(() => allProducts.filter(p => p.category === 'Pizza'), [allProducts]);
 
   const groupedProducts = useMemo(() => 
     availableProducts.reduce(
@@ -141,19 +141,30 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   useEffect(() => {
     if (open) {
       if (isEditMode && order) {
+
+        const normalizeName = (name: string) => {
+            return name.toLowerCase().replace('pizza ', '').trim();
+        };
+
+        const findPizzaByNormalizedName = (name: string): Product | undefined => {
+            const normalizedName = normalizeName(name);
+            return allPizzas.find(p => normalizeName(p.name) === normalizedName);
+        };
+
         const formItems = order.items.map(item => {
             const isHalfHalf = item.productName.startsWith('Meio a Meio:');
             let productId = '';
             let product2Id: string | undefined = undefined;
 
             if (isHalfHalf) {
-                const names = item.productName.replace('Meio a Meio:', '').split('/').map(s => s.trim());
-                const product1 = availablePizzas.find(p => p.name === names[0]);
-                const product2 = availablePizzas.find(p => p.name === names[1]);
+                // Regex para dividir por / ou pelo caractere de fração ⁄
+                const names = item.productName.replace('Meio a Meio:', '').split(/\/|⁄/);
+                const product1 = findPizzaByNormalizedName(names[0]);
+                const product2 = findPizzaByNormalizedName(names[1]);
                 productId = product1?.id || '';
                 product2Id = product2?.id || undefined;
             } else {
-                const product = availableProducts.find(p => p.name === item.productName);
+                const product = allProducts.find(p => p.name === item.productName);
                 productId = product?.id || '';
             }
 
@@ -181,7 +192,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         });
       }
     }
-  }, [order, open, reset, isEditMode, availableProducts, availablePizzas]);
+  }, [order, open, reset, isEditMode, allProducts, allPizzas]);
 
 
   // --- AUTO-FILL CUSTOMER DATA ---
@@ -247,10 +258,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     onSubmit(data);
     handleClose();
   }
+  
+  const availablePizzas = useMemo(() => allProducts.filter(p => p.isAvailable && p.category === 'Pizza'), [allProducts]);
+  const productToShow = (id: string | undefined) => allProducts.find((p) => p.id === id)?.name || "Selecione um produto";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditMode ? `Editar Pedido #${order?.orderNumber}` : 'Adicionar Novo Pedido'}</DialogTitle>
           <DialogDescription>
@@ -259,7 +273,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
-            <div className="space-y-6 max-h-[70vh] sm:max-h-[60vh] overflow-y-auto p-1 pr-4">
+            <div className="space-y-6 p-1 pr-4">
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -307,7 +321,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                   <FormItem className="space-y-3">
                     <FormLabel>Tipo do Pedido</FormLabel>
                     <FormControl>
-                      <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex space-x-4" >
+                      <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                         <FormItem className="flex items-center space-x-2 space-y-0">
                           <FormControl><RadioGroupItem value="retirada" /></FormControl>
                           <FormLabel className="font-normal cursor-pointer">Retirada</FormLabel>
@@ -387,19 +401,20 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                 <FormLabel>Itens do Pedido</FormLabel>
                 <div className="space-y-4 mt-2">
                   {fields.map((field, index) => {
-                    const selectedProduct = availableProducts.find(p => p.id === watchedItems[index]?.productId);
+                    const selectedProduct = allProducts.find(p => p.id === watchedItems[index]?.productId);
                     const isPizza = selectedProduct?.category === 'Pizza';
                     const isHalfHalf = watchedItems[index]?.isHalfHalf ?? false;
+                    
                     return (
                       <div key={field.id} className="flex flex-col gap-3 rounded-md border p-4">
-                        <div className="flex items-start gap-2">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2">
                           <FormField control={form.control} name={`items.${index}.productId`} render={({ field }) => (
                               <FormItem className="flex-1">
                                 <Popover open={openProductCombobox === index} onOpenChange={(isOpen) => setOpenProductCombobox(isOpen ? index : null)}>
                                   <PopoverTrigger asChild>
                                     <FormControl>
                                       <Button variant="outline" role="combobox" className={cn("w-full justify-between", !field.value && "text-muted-foreground")}>
-                                        {field.value ? availableProducts.find((p) => p.id === field.value)?.name : "Selecione um produto"}
+                                        {productToShow(field.value)}
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                       </Button>
                                     </FormControl>
@@ -409,13 +424,16 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                       {Object.entries(groupedProducts).map(([category, products]) => (
                                         <CommandGroup key={category} heading={category}>
                                           {products.map((product) => (
-                                            <CommandItem value={product.name} key={product.id} onSelect={() => {
+                                            <CommandItem
+                                              key={product.id}
+                                              onSelect={() => {
                                                 setValue(`items.${index}.productId`, product.id, { shouldValidate: true });
                                                 setValue(`items.${index}.size`, undefined, { shouldValidate: true });
                                                 setValue(`items.${index}.isHalfHalf`, false, { shouldValidate: true });
                                                 setValue(`items.${index}.product2Id`, undefined, { shouldValidate: true });
-                                                setOpenProductCombobox(null)
-                                              }}>
+                                                setOpenProductCombobox(null);
+                                              }}
+                                            >
                                               <Check className={cn("mr-2 h-4 w-4", product.id === field.value ? "opacity-100" : "opacity-0")} />
                                               {product.name}
                                             </CommandItem>
@@ -429,16 +447,18 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                               </FormItem>
                             )}
                           />
-                          <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
-                              <FormItem className="w-24">
-                                <FormControl><Input type="number" min="1" placeholder="Qtd." {...field} /></FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}>
-                            <Trash2 className="h-4 w-4" /><span className="sr-only">Remover item</span>
-                          </Button>
+                          <div className="flex items-start gap-2">
+                            <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
+                                <FormItem className="flex-1 sm:w-24">
+                                  <FormControl><Input type="number" min="1" placeholder="Qtd." {...field} /></FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}>
+                              <Trash2 className="h-4 w-4" /><span className="sr-only">Remover item</span>
+                            </Button>
+                          </div>
                         </div>
 
                         {isPizza && (
@@ -468,7 +488,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                       <PopoverTrigger asChild>
                                         <FormControl>
                                           <Button variant="outline" role="combobox" className={cn("w-full justify-between", !field.value && "text-muted-foreground")}>
-                                            {field.value ? availablePizzas.find((p) => p.id === field.value)?.name : "Selecione o segundo sabor"}
+                                            {productToShow(field.value)}
                                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                           </Button>
                                         </FormControl>
@@ -476,10 +496,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                                         <Command><CommandInput placeholder="Pesquisar pizza..." /><CommandEmpty>Nenhuma pizza encontrada.</CommandEmpty><CommandList><CommandGroup>
                                           {availablePizzas.map((pizza) => (
-                                            <CommandItem value={pizza.name} key={pizza.id} onSelect={() => {
+                                            <CommandItem
+                                              key={pizza.id}
+                                              onSelect={() => {
                                                 setValue(`items.${index}.product2Id`, pizza.id, { shouldValidate: true });
-                                                setOpenProduct2Combobox(null)
-                                              }}>
+                                                setOpenProduct2Combobox(null);
+                                              }}
+                                            >
                                               <Check className={cn("mr-2 h-4 w-4", pizza.id === field.value ? "opacity-100" : "opacity-0")} />
                                               {pizza.name}
                                             </CommandItem>
@@ -498,7 +521,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                 <FormItem className="pt-2">
                                     <FormLabel className="text-sm">Tamanho</FormLabel>
                                     <FormControl>
-                                      <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-wrap gap-x-4 gap-y-2">
+                                      <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
                                         {Object.keys(selectedProduct.sizes!)
                                             .filter((size) => selectedProduct.category !== 'Pizza' || getMockSettings().sizeAvailability[size as PizzaSize])
                                             .map((size) => (
@@ -538,7 +561,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
               />
             </div>
 
-            <DialogFooter className="pt-4 border-t">
+            <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background">
               <DialogClose asChild>
                 <Button type="button" variant="ghost">Cancelar</Button>
               </DialogClose>

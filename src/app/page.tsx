@@ -60,7 +60,7 @@ export default function LoginPage() {
         <div className="text-center">
             <Pizza className="mx-auto h-14 w-14 text-primary" />
             <h1 className="mt-4 font-headline text-4xl font-bold tracking-tighter">
-              Pizzaria Bela Massa
+              Lider Pizzaria
             </h1>
             <p className="mt-2 text-muted-foreground">
               Faça login para gerenciar sua pizzaria

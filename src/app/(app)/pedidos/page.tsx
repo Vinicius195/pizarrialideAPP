@@ -13,7 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button, buttonVariants } from '@/components/ui/button';
 import type { Order, OrderStatus } from '@/types';
-import { Clock, PlusCircle, MoreHorizontal, Search, MessageSquare, Trash2, Edit, ChevronDown } from 'lucide-react';
+import { Clock, PlusCircle, MoreHorizontal, Search, MessageSquare, Trash2, Edit, ChevronDown, ArrowRightCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AddOrderDialog, type AddOrderFormValues } from '@/components/app/add-order-dialog';
 import { OrderDetailsDialog } from '@/components/app/order-details-dialog';
@@ -39,7 +39,6 @@ import { cn, formatTimestamp } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-// Minor change: Passed onEditOrder to the card
 function OrderCard({ 
   order, 
   onAdvanceStatus, 
@@ -55,6 +54,7 @@ function OrderCard({
 }) {
   const { currentUser } = useUser();
   const isManager = currentUser?.role === 'Administrador';
+  const isEmployee = currentUser?.role === 'Funcionário';
 
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
@@ -117,6 +117,25 @@ function OrderCard({
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => onViewDetails(order)}>Detalhes</Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                    size="sm" 
+                    onClick={() => onAdvanceStatus(order.id)}
+                    disabled={isActionDisabled}
+                    className="flex items-center gap-2"
+                >
+                    <span className="hidden sm:inline">Avançar</span>
+                    <ArrowRightCircle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Avançar Status</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -132,13 +151,7 @@ function OrderCard({
                 <Edit className="mr-2 h-4 w-4" />
                 Editar Pedido
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onAdvanceStatus(order.id)}
-                disabled={isActionDisabled}
-              >
-                Avançar Status
-              </DropdownMenuItem>
-              {isManager && (
+              {(isManager || isEmployee) && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -146,6 +159,7 @@ function OrderCard({
                     onClick={() => onCancelOrder(order.id)}
                     disabled={isActionDisabled}
                   >
+                    <Trash2 className="mr-2 h-4 w-4" />
                     Cancelar Pedido
                   </DropdownMenuItem>
                 </>

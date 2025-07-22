@@ -5,11 +5,12 @@ import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { UserProvider } from '@/contexts/user-context';
 import { cn } from '@/lib/utils';
+import { ServiceWorkerRegistrar } from '@/components/service-worker-registrar';
 
 export const metadata: Metadata = {
-  title: 'Pizzaria Bela Massa',
+  title: 'Lider Pizzaria',
   description: 'Gerenciador para sua pizzaria',
-  manifest: '/manifest.webmanifest', // Adicionado o caminho para o manifesto
+  manifest: '/manifest.webmanifest',
 };
 
 const fontSans = PT_Sans({
@@ -44,6 +45,7 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="light">
           <UserProvider>
+            <ServiceWorkerRegistrar />
             {children}
             <Toaster />
           </UserProvider>

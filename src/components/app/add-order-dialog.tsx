@@ -26,15 +26,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Order, Product, PizzaSize, Customer } from '@/types';
-import { Check, ChevronsUpDown, Link, Phone, PlusCircle, Trash2, Loader2 } from 'lucide-react';
+import { Link, Phone, PlusCircle, Trash2, Loader2, ChevronsUpDown } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { getMockSettings } from '@/lib/settings-data';
 import { Switch } from '../ui/switch';
 import { useUser } from '@/contexts/user-context';
+import { ProductSelectionDrawer } from './product-selection-drawer';
 
 const orderItemSchema = z.object({
   productId: z.string().min(1, "Selecione um produto."),
@@ -88,8 +87,8 @@ interface AddOrderDialogProps {
 }
 
 export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrderDialogProps) {
-  const [openProductCombobox, setOpenProductCombobox] = useState<number | null>(null);
-  const [openProduct2Combobox, setOpenProduct2Combobox] = useState<number | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerContext, setDrawerContext] = useState<{ itemIndex: number; isSecondFlavor?: boolean }>({ itemIndex: -1 });
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   
@@ -123,29 +122,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const customerPhone = watch('customerPhone');
   
   const availableProducts = useMemo(() => allProducts.filter(p => p.isAvailable), [allProducts]);
-  const allPizzas = useMemo(() => allProducts.filter(p => p.category === 'Pizza'), [allProducts]);
-
-  const groupedProducts = useMemo(() => 
-    availableProducts.reduce(
-      (acc, product) => {
-        const { category } = product;
-        if (!acc[category]) {
-          acc[category] = [];
-        }
-        acc[category].push(product);
-        return acc;
-      },
-      {} as Record<Product['category'], Product[]>
-    ), [availableProducts]);
+  const availablePizzas = useMemo(() => allProducts.filter(p => p.isAvailable && p.category === 'Pizza'), [allProducts]);
 
   useEffect(() => {
     if (open) {
       if (isEditMode && order) {
-
-        const normalizeName = (name: string) => {
-            return name.toLowerCase().replace('pizza ', '').trim();
-        };
-
+        const allPizzas = allProducts.filter(p => p.category === 'Pizza');
+        const normalizeName = (name: string) => name.toLowerCase().replace('pizza ', '').trim();
         const findPizzaByNormalizedName = (name: string): Product | undefined => {
             const normalizedName = normalizeName(name);
             return allPizzas.find(p => normalizeName(p.name) === normalizedName);
@@ -157,7 +140,6 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
             let product2Id: string | undefined = undefined;
 
             if (isHalfHalf) {
-                // Regex para dividir por / ou pelo caractere de fração ⁄
                 const names = item.productName.replace('Meio a Meio:', '').split(/\/|⁄/);
                 const product1 = findPizzaByNormalizedName(names[0]);
                 const product2 = findPizzaByNormalizedName(names[1]);
@@ -171,15 +153,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
             return { productId, product2Id, isHalfHalf, quantity: item.quantity, size: item.size, };
         });
 
-        const addressType = order.locationLink ? 'link' : 'manual';
-
         reset({
             customerName: order.customerName,
             customerPhone: order.customerPhone || '',
             orderType: order.orderType,
             address: order.address || '',
             locationLink: order.locationLink || '',
-            addressType,
+            addressType: order.locationLink ? 'link' : 'manual',
             notes: order.notes || '',
             items: formItems.length > 0 ? formItems : [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }],
         });
@@ -192,10 +172,8 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         });
       }
     }
-  }, [order, open, reset, isEditMode, allProducts, allPizzas]);
+  }, [order, open, reset, isEditMode, allProducts]);
 
-
-  // --- AUTO-FILL CUSTOMER DATA ---
   useEffect(() => {
     const cleanedPhone = customerPhone?.replace(/\D/g, '');
     if (isEditMode || !cleanedPhone || (cleanedPhone.length < 10)) {
@@ -212,16 +190,11 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         setSearchError("Erro de autenticação.");
         return;
       }
-
       try {
-        const response = await fetch(`/api/customers?phone=${cleanedPhone}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
+        const response = await fetch(`/api/customers?phone=${cleanedPhone}`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (response.ok) {
           const foundCustomer: Customer = await response.json();
           setValue('customerName', foundCustomer.name, { shouldValidate: true });
-          
           const hasLink = !!foundCustomer.locationLink;
           setValue('addressType', hasLink ? 'link' : 'manual');
           setValue('address', hasLink ? '' : foundCustomer.address || '');
@@ -232,66 +205,66 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         } else {
           throw new Error('Falha ao buscar cliente.');
         }
-
       } catch (error) {
         setSearchError("Erro ao contatar o servidor.");
       } finally {
         setIsSearchingCustomer(false);
       }
     };
-
-    const handler = setTimeout(() => {
-      searchCustomer();
-    }, 500);
-
-    return () => {
-      clearTimeout(handler);
-    };
+    const handler = setTimeout(() => searchCustomer(), 500);
+    return () => clearTimeout(handler);
   }, [customerPhone, setValue, trigger, getAuthToken, isEditMode]);
 
+  const handleOpenDrawer = (itemIndex: number, isSecondFlavor = false) => {
+    setDrawerContext({ itemIndex, isSecondFlavor });
+    setIsDrawerOpen(true);
+  };
 
-  const handleClose = () => {
-    onOpenChange(false);
-  }
+  const handleProductSelect = (productId: string) => {
+    const { itemIndex, isSecondFlavor } = drawerContext;
+    if (isSecondFlavor) {
+      setValue(`items.${itemIndex}.product2Id`, productId, { shouldValidate: true });
+    } else {
+      setValue(`items.${itemIndex}.productId`, productId, { shouldValidate: true });
+      setValue(`items.${itemIndex}.size`, undefined, { shouldValidate: true });
+      setValue(`items.${itemIndex}.isHalfHalf`, false, { shouldValidate: true });
+      setValue(`items.${itemIndex}.product2Id`, undefined, { shouldValidate: true });
+    }
+  };
 
   function handleFormSubmit(data: AddOrderFormValues) {
     onSubmit(data);
-    handleClose();
+    onOpenChange(false);
   }
   
-  const availablePizzas = useMemo(() => allProducts.filter(p => p.isAvailable && p.category === 'Pizza'), [allProducts]);
   const productToShow = (id: string | undefined) => allProducts.find((p) => p.id === id)?.name || "Selecione um produto";
+  const selectedValue = drawerContext.isSecondFlavor 
+    ? watchedItems[drawerContext.itemIndex]?.product2Id 
+    : watchedItems[drawerContext.itemIndex]?.productId;
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEditMode ? `Editar Pedido #${order?.orderNumber}` : 'Adicionar Novo Pedido'}</DialogTitle>
-          <DialogDescription>
-            {isEditMode ? 'Altere os detalhes do pedido abaixo.' : 'Preencha os detalhes abaixo para criar um novo pedido.'}
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isEditMode ? `Editar Pedido #${order?.orderNumber}` : 'Adicionar Novo Pedido'}</DialogTitle>
+            <DialogDescription>
+              {isEditMode ? 'Altere os detalhes do pedido abaixo.' : 'Preencha os detalhes abaixo para criar um novo pedido.'}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
             <div className="space-y-6 p-1 pr-4">
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="customerName"
-                  render={({ field }) => (
+                <FormField control={form.control} name="customerName" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Nome do Cliente</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Ex: João da Silva" {...field} />
-                      </FormControl>
+                      <FormControl><Input placeholder="Ex: João da Silva" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                 <FormField
-                  control={form.control}
-                  name="customerPhone"
-                  render={({ field }) => (
+                 <FormField control={form.control} name="customerPhone" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Telefone</FormLabel>
                       <FormControl>
@@ -314,10 +287,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="orderType"
-                render={({ field }) => (
+              <FormField control={form.control} name="orderType" render={({ field }) => (
                   <FormItem className="space-y-3">
                     <FormLabel>Tipo do Pedido</FormLabel>
                     <FormControl>
@@ -341,10 +311,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
 
               {orderType === 'entrega' && isManager && (
                 <div className="space-y-4 rounded-md border bg-muted/50 p-4">
-                   <FormField
-                    control={form.control}
-                    name="addressType"
-                    render={({ field }) => (
+                   <FormField control={form.control} name="addressType" render={({ field }) => (
                       <FormItem className="space-y-3">
                         <FormLabel>Como informar o endereço?</FormLabel>
                         <FormControl>
@@ -363,20 +330,16 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                       </FormItem>
                     )}
                   />
-
                   {addressType === 'manual' && (
                     <FormField control={form.control} name="address" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Endereço Completo</FormLabel>
-                          <FormControl>
-                            <Textarea placeholder="Ex: Rua das Flores, 123, Bairro Jardim..." {...field} />
-                          </FormControl>
+                          <FormControl><Textarea placeholder="Ex: Rua das Flores, 123, Bairro Jardim..." {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                   )}
-
                   {addressType === 'link' && (
                     <FormField control={form.control} name="locationLink" render={({ field }) => (
                         <FormItem>
@@ -408,45 +371,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                     return (
                       <div key={field.id} className="flex flex-col gap-3 rounded-md border p-4">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2">
-                          <FormField control={form.control} name={`items.${index}.productId`} render={({ field }) => (
-                              <FormItem className="flex-1">
-                                <Popover open={openProductCombobox === index} onOpenChange={(isOpen) => setOpenProductCombobox(isOpen ? index : null)}>
-                                  <PopoverTrigger asChild>
-                                    <FormControl>
-                                      <Button variant="outline" role="combobox" className={cn("w-full justify-between", !field.value && "text-muted-foreground")}>
-                                        {productToShow(field.value)}
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                      </Button>
-                                    </FormControl>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                                    <Command><CommandInput placeholder="Pesquisar produto..." /><CommandEmpty>Nenhum produto encontrado.</CommandEmpty><CommandList>
-                                      {Object.entries(groupedProducts).map(([category, products]) => (
-                                        <CommandGroup key={category} heading={category}>
-                                          {products.map((product) => (
-                                            <CommandItem
-                                              key={product.id}
-                                              onSelect={() => {
-                                                setValue(`items.${index}.productId`, product.id, { shouldValidate: true });
-                                                setValue(`items.${index}.size`, undefined, { shouldValidate: true });
-                                                setValue(`items.${index}.isHalfHalf`, false, { shouldValidate: true });
-                                                setValue(`items.${index}.product2Id`, undefined, { shouldValidate: true });
-                                                setOpenProductCombobox(null);
-                                              }}
-                                            >
-                                              <Check className={cn("mr-2 h-4 w-4", product.id === field.value ? "opacity-100" : "opacity-0")} />
-                                              {product.name}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      ))}
-                                    </CommandList></Command>
-                                  </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                          <div className="flex-1">
+                            <Button variant="outline" type="button" className={cn("w-full justify-between", !watchedItems[index]?.productId && "text-muted-foreground")} onClick={() => handleOpenDrawer(index)}>
+                              {productToShow(watchedItems[index]?.productId)}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                            <FormField control={form.control} name={`items.${index}.productId`} render={() => <FormMessage />} />
+                          </div>
                           <div className="flex items-start gap-2">
                             <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
                                 <FormItem className="flex-1 sm:w-24">
@@ -481,39 +412,14 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                         )}
 
                         {isPizza && isHalfHalf && (
-                             <FormField control={form.control} name={`items.${index}.product2Id`} render={({ field }) => (
-                                <FormItem className="flex-1">
-                                    <FormLabel>2º Sabor da Pizza</FormLabel>
-                                    <Popover open={openProduct2Combobox === index} onOpenChange={(isOpen) => setOpenProduct2Combobox(isOpen ? index : null)}>
-                                      <PopoverTrigger asChild>
-                                        <FormControl>
-                                          <Button variant="outline" role="combobox" className={cn("w-full justify-between", !field.value && "text-muted-foreground")}>
-                                            {productToShow(field.value)}
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                          </Button>
-                                        </FormControl>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                                        <Command><CommandInput placeholder="Pesquisar pizza..." /><CommandEmpty>Nenhuma pizza encontrada.</CommandEmpty><CommandList><CommandGroup>
-                                          {availablePizzas.map((pizza) => (
-                                            <CommandItem
-                                              key={pizza.id}
-                                              onSelect={() => {
-                                                setValue(`items.${index}.product2Id`, pizza.id, { shouldValidate: true });
-                                                setOpenProduct2Combobox(null);
-                                              }}
-                                            >
-                                              <Check className={cn("mr-2 h-4 w-4", pizza.id === field.value ? "opacity-100" : "opacity-0")} />
-                                              {pizza.name}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup></CommandList></Command>
-                                      </PopoverContent>
-                                    </Popover>
-                                    <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+                           <div className="flex-1">
+                              <FormLabel>2º Sabor da Pizza</FormLabel>
+                              <Button variant="outline" type="button" className={cn("w-full justify-between mt-2", !watchedItems[index]?.product2Id && "text-muted-foreground")} onClick={() => handleOpenDrawer(index, true)}>
+                                {productToShow(watchedItems[index]?.product2Id)}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                              <FormField control={form.control} name={`items.${index}.product2Id`} render={() => <FormMessage />} />
+                            </div>
                         )}
 
                         {selectedProduct && selectedProduct.sizes && (
@@ -552,9 +458,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
               <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Observações (Opcional)</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Ex: Pizza sem cebola, troco para R$100, etc." {...field} />
-                    </FormControl>
+                    <FormControl><Textarea placeholder="Ex: Pizza sem cebola, troco para R$100, etc." {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -562,14 +466,21 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
             </div>
 
             <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background">
-              <DialogClose asChild>
-                <Button type="button" variant="ghost">Cancelar</Button>
-              </DialogClose>
+              <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
               <Button type="submit">{isEditMode ? 'Salvar Alterações' : 'Salvar Pedido'}</Button>
             </DialogFooter>
           </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+          </Form>
+        </DialogContent>
+      </Dialog>
+      <ProductSelectionDrawer
+        open={isDrawerOpen}
+        onOpenChange={setIsDrawerOpen}
+        onSelectProduct={handleProductSelect}
+        products={drawerContext.isSecondFlavor ? availablePizzas : availableProducts}
+        title={drawerContext.isSecondFlavor ? 'Selecione o 2º Sabor' : 'Selecione um Produto'}
+        selectedValue={selectedValue}
+      />
+    </>
   );
 }

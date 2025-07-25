@@ -8,9 +8,7 @@ export interface Product {
   id: string;
   name: string;
   category: 'Pizza' | 'Bebida' | 'Adicional';
-  // For items with multiple sizes/volumes like Pizzas and Drinks
   sizes?: Record<string, number>;
-  // For simple items with a single price, like Adicionais
   price?: number;
   isAvailable: boolean;
   description?: string;
@@ -27,15 +25,21 @@ export interface Customer {
   orderCount: number;
 };
 
+// This now matches the more robust structure the context expects.
 export interface OrderItem {
-  productName: string;
+  productId: string;
+  product2Id?: string; // For half-and-half pizzas
+  isHalfHalf: boolean;
+  productName: string; // This will be denormalized for easy display
   quantity: number;
   size?: string;
 }
 
+// This now includes the customerId for better data linking.
 export interface Order {
   id: string;
   orderNumber: number;
+  customerId?: string; // Important for linking back to the customer
   customerName: string;
   customerPhone?: string;
   items: OrderItem[];
@@ -60,7 +64,7 @@ export interface UserProfile {
   status: UserStatus;
   avatar: string;
   fallback: string;
-  fcmToken?: string; // Adicionado o campo para o token de notificação
+  fcmToken?: string;
 }
 
 export interface Notification {

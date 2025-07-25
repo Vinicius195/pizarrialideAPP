@@ -85,35 +85,43 @@ export async function GET(request: Request, { params }: { params: { id: string }
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
     const requestingUid = await getRequestingUserId(request);
-    if (!requestingUid) return new NextResponse('Unauthorized: Invalid or missing token.', { status: 401 });
+    if (!requestingUid) {
+        return new NextResponse('Unauthorized: Invalid or missing token.', { status: 401 });
+    }
+
+    const requesterDoc = await db.collection('users').doc(requestingUid).get();
+    const requesterProfile = requesterDoc.data();
+    if (!requesterProfile || requesterProfile.role !== 'Administrador') {
+        return new NextResponse('Forbidden: You do not have permission to perform this action.', { status: 403 });
+    }
 
     const userIdToUpdate = params.id;
-    const userData: Partial<UserProfile> = await request.json();
-
-    delete userData.key;
-    delete userData.email;
-
-    if (userData.role) {
-      const requesterDoc = await db.collection('users').doc(requestingUid).get();
-      const requesterProfile = requesterDoc.data();
-      if (!requesterProfile || requesterProfile.role !== 'Administrador') {
-        return new NextResponse('Forbidden: You do not have permission to change user roles.', { status: 403 });
-      }
+    if (requestingUid === userIdToUpdate) {
+        return new NextResponse('Forbidden: Administrators cannot change their own role or status.', { status: 403 });
     }
 
-    await db.collection('users').doc(userIdToUpdate).update(userData);
+    const dataToUpdate: Partial<UserProfile> = await request.json();
+    
+    await db.runTransaction(async (transaction) => {
+        const userDocRef = db.collection('users').doc(userIdToUpdate);
+        const userDoc = await transaction.get(userDocRef);
 
-    // --- Safe Notification Trigger ---
-    if (userData.status) {
-        await notifyUserOfStatusChange(userIdToUpdate, userData.status);
+        if (!userDoc.exists) {
+            throw new Error("User document not found!");
+        }
+        const newProfileData = { ...userDoc.data(), ...dataToUpdate };
+        transaction.update(userDocRef, newProfileData);
+    });
+
+    if (dataToUpdate.status) {
+        await notifyUserOfStatusChange(userIdToUpdate, dataToUpdate.status);
     }
-    // --- End of Notification Trigger ---
-
-    if (userData.name) {
-      await admin.auth().updateUser(userIdToUpdate, { displayName: userData.name });
+    if (dataToUpdate.name) {
+      await admin.auth().updateUser(userIdToUpdate, { displayName: dataToUpdate.name });
     }
 
-    return NextResponse.json({ message: 'User profile updated' });
+    return NextResponse.json({ message: 'User profile updated successfully' });
+
   } catch (error) {
     console.error(`Error updating user profile ${params.id}:`, error);
     return new NextResponse('Internal Server Error', { status: 500 });

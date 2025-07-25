@@ -1,17 +1,7 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
-import type {
-  UserProfile,
-  UserRole,
-  UserStatus,
-  Customer,
-  Order,
-  OrderStatus,
-  Product,
-  PizzaSize,
-  OrderItem,
-} from '@/types';
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo } from 'react';
+import type { UserProfile, UserRole, UserStatus, Customer, Order, OrderStatus, Product, PizzaSize, OrderItem } from '@/types';
 import type { AddOrderFormValues } from '@/components/app/add-order-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { ProductFormValues } from '@/components/app/add-product-dialog';
@@ -24,7 +14,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 export type RegisterDetails = Omit<UserProfile, 'key' | 'status' | 'avatar' | 'fallback' | 'password'> & { password_str: string; };
 export type LoginResult = { success: boolean; message: string };
 export type RegisterResult = { success: boolean; message: string; user?: UserProfile; };
-export type CustomerData = Partial<Omit<Customer, 'id'>> & { id?: string; orderTotal?: number; name: string; phone: string; };
+export type CustomerData = Partial<Omit<Customer, 'id' | 'orderCount' | 'totalSpent' | 'lastOrderDate'>> & { id?: string; name: string; phone: string; };
 
 export const kanbanStatuses: { status: OrderStatus; icon: React.ElementType; color: string; }[] = [
   { status: 'Recebido', icon: Package, color: 'bg-chart-3 text-white' },
@@ -68,14 +58,37 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 // --- Provider Component ---
 export function UserProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [rawUsers, setRawUsers] = useState<UserProfile[]>([]);
+  const [rawCustomers, setRawCustomers] = useState<Customer[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
+  const [rawOrders, setRawOrders] = useState<Order[]>([]);
+
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const orderStatuses: OrderStatus[] = ['Recebido', 'Preparando', 'Pronto', 'Em Entrega', 'Entregue', 'Cancelado'];
+  const orderStatuses: OrderStatus[] = ['Recebido', 'Preparando', 'Pronto', 'Em Entrega', 'Entregue', 'Cancelado', 'Arquivado'];
+  
+  const aggregatedCustomers = useMemo(() => {
+    const customerMap = new Map<string, Customer>();
+
+    rawCustomers.forEach(customer => {
+      customerMap.set(customer.id, { ...customer, orderCount: 0, totalSpent: 0, lastOrderDate: 'Nunca' });
+    });
+
+    rawOrders.forEach(order => {
+      if (order.customerId && customerMap.has(order.customerId)) {
+        const customer = customerMap.get(order.customerId)!;
+        customer.orderCount++;
+        if (order.status !== 'Cancelado') customer.totalSpent += order.total;
+        if (customer.lastOrderDate === 'Nunca' || new Date(order.timestamp) > new Date(customer.lastOrderDate)) {
+          customer.lastOrderDate = order.timestamp;
+        }
+      }
+    });
+
+    return Array.from(customerMap.values());
+  }, [rawCustomers, rawOrders]);
+
 
   const getAuthToken = useCallback(async () => {
     const user = auth.currentUser;
@@ -84,11 +97,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const fetchAPI = useCallback(async (url: string, options: RequestInit = {}) => {
     const token = await getAuthToken();
-    options.headers = {
-      ...options.headers,
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    };
+    options.headers = { ...options.headers, 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     const res = await fetch(url, options);
     if (!res.ok) {
       const errorBody = await res.text();
@@ -100,52 +109,44 @@ export function UserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        setIsLoading(true);
         try {
-          // Fetch user profile initially to check status
           const userProfile = await fetchAPI(`/api/users/${user.uid}`);
           if (!userProfile || userProfile.status !== 'Aprovado') {
             throw new Error(`Acesso negado. Status: ${userProfile?.status || 'Pendente'}`);
           }
           setCurrentUser(userProfile);
 
-          // Setup realtime listeners
+          // Listeners for general collections
           const collections: { [key: string]: (data: any) => void } = {
-            users: setUsers,
-            products: setProducts,
-            customers: setCustomers,
+            users: (data) => setRawUsers(data.map((u: any) => ({ ...u, key: u.id }))),
+            customers: setRawCustomers,
+            products: setRawProducts,
           };
-
-          const unsubscribes = Object.entries(collections).map(([name, setter]) => {
-            const q = query(collection(db, name));
-            return onSnapshot(q, (snapshot) => {
+          
+          const unsubscribes = Object.entries(collections).map(([name, setter]) => 
+            onSnapshot(collection(db, name), (snapshot) => {
               const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any;
               setter(data);
-            });
-          });
+            })
+          );
 
-          // Special listener for orders to filter out archived ones
+          // --- CORRECTED: Special listener for orders to filter out archived ones ---
           const ordersQuery = query(collection(db, 'orders'), where('status', '!=', 'Arquivado'));
           const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
             const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
-            setOrders(ordersData);
+            setRawOrders(ordersData);
           });
           unsubscribes.push(ordersUnsubscribe);
           
-          setIsLoading(false);
-
-          // Return a cleanup function for all listeners
           return () => unsubscribes.forEach(unsub => unsub());
 
         } catch (error: any) {
-          console.error("Failed to fetch user profile or user not approved:", error);
-          toast({
-            variant: "destructive",
-            title: "Falha na autenticação",
-            description: error.message || "Não foi possível verificar seu perfil. Tente novamente.",
-          });
-          await signOut(auth); // Clear the invalid auth state
-          setCurrentUser(null);
-          setIsLoading(false); // Ensure loading completes even on error
+          console.error("Auth error:", error);
+          toast({ variant: "destructive", title: "Falha na autenticação", description: error.message, });
+          await signOut(auth);
+        } finally {
+          setIsLoading(false);
         }
       } else {
         setCurrentUser(null);
@@ -154,9 +155,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
 
     return () => authUnsubscribe();
-}, [fetchAPI, toast]);
+  }, [fetchAPI, toast]);
   
-    const login = async (email: string, pass: string): Promise<LoginResult> => {
+  const login = async (email: string, pass: string): Promise<LoginResult> => {
     try {
       await signInWithEmailAndPassword(auth, email, pass);
       return { success: true, message: 'Login bem-sucedido!' };
@@ -167,16 +168,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await signOut(auth);
-    setCurrentUser(null);
   };
 
   const registerUser = async (details: RegisterDetails): Promise<RegisterResult> => {
     try {
-      const newUser = await fetchAPI('/api/users', {
-        method: 'POST', body: JSON.stringify({ ...details, password: details.password_str }),
-      });
-      // Listener will auto-update state
-      toast({ title: 'Solicitação Enviada!', description: 'Seu acesso precisa ser aprovado por um administrador.' });
+      const newUser = await fetchAPI('/api/users', { method: 'POST', body: JSON.stringify({ ...details, password: details.password_str }) });
+      toast({ title: 'Solicitação Enviada!', description: 'Seu acesso precisa ser aprovado.' });
       return { success: true, message: 'Usuário registrado!', user: newUser };
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Erro no Registro', description: error.message });
@@ -187,7 +184,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const updateUser = async (key: string, data: Partial<UserProfile>): Promise<RegisterResult> => {
     try {
       const updatedUser = await fetchAPI(`/api/users/${key}`, { method: 'PUT', body: JSON.stringify(data) });
-      // Listener will auto-update state
       if (currentUser?.key === key) setCurrentUser((prev) => (prev ? { ...prev, ...updatedUser } : null));
       return { success: true, message: 'Usuário atualizado!' };
     } catch (e: any) {
@@ -198,7 +194,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const deleteUser = async (key: string) => {
     await fetchAPI(`/api/users/${key}`, { method: 'DELETE' });
-    // Listener will auto-update state
     toast({ title: 'Sucesso', description: 'Usuário removido.' });
   };
 
@@ -211,7 +206,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
     await updateUser(key, { role });
     toast({ title: 'Função Atualizada!', description: `A função do usuário foi alterada para ${role}.` });
   };
-
+  
+  const addOrUpdateCustomer = async (data: CustomerData) => {
+    if (data.id) {
+        await fetchAPI(`/api/customers/${data.id}`, { method: 'PUT', body: JSON.stringify(data) });
+    } else {
+        await fetchAPI('/api/customers', { method: 'POST', body: JSON.stringify(data) });
+    }
+  };
+  
+  const deleteCustomer = async (customerId: string) => {
+    await fetchAPI(`/api/customers/${customerId}`, { method: 'DELETE' });
+    toast({ variant: 'destructive', title: 'Cliente Removido!', description: 'O cliente foi removido com sucesso.' });
+  };
+  
   const transformProductForm = (data: ProductFormValues): Omit<Product, 'id' | 'isAvailable'> => {
     if (data.category === 'Pizza') return { name: data.name, category: 'Pizza', description: data.description, sizes: data.pizzaSizes };
     if (data.category === 'Bebida') {
@@ -223,119 +231,127 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const addProduct = async (data: ProductFormValues) => {
     await fetchAPI('/api/products', { method: 'POST', body: JSON.stringify({ ...transformProductForm(data), isAvailable: true }) });
-    // Listener will auto-update state
     toast({ title: 'Sucesso!', description: 'Produto adicionado.' });
   };
 
   const updateProduct = async (id: string, data: ProductFormValues) => {
-    const updatedData = transformProductForm(data);
-    await fetchAPI(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(updatedData) });
-    // Listener will auto-update state
+    await fetchAPI(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(transformProductForm(data)) });
     toast({ title: 'Sucesso!', description: 'Produto atualizado.' });
   };
   
   const toggleProductAvailability = async (id: string, isAvailable: boolean) => {
     await fetchAPI(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify({ isAvailable }) });
-    // Listener will auto-update state
   };
 
   const deleteProduct = async (id: string) => {
     await fetchAPI(`/api/products/${id}`, { method: 'DELETE' });
-    // Listener will auto-update state
     toast({ variant: 'destructive', title: 'Sucesso!', description: 'Produto removido.' });
   };
 
-  const addOrUpdateCustomer = async (data: CustomerData) => {
-    const existing = customers.find((c) => (data.id && c.id === data.id) || (data.phone && c.phone === data.phone));
-    const endpoint = existing ? `/api/customers/${existing.id}` : '/api/customers';
-    const method = existing ? 'PUT' : 'POST';
-    const payload = { ...data, orderCount: (existing?.orderCount || 0) + 1, totalSpent: (existing?.totalSpent || 0) + (data.orderTotal || 0) };
-    await fetchAPI(endpoint, { method, body: JSON.stringify(payload) });
-    // Listener will auto-update state
+  const calculateOrderTotal = (items: AddOrderFormValues['items']): number => {
+    return items.reduce((acc, item) => {
+        const product = rawProducts.find(p => p.id === item.productId);
+        if (!product) return acc;
+
+        let price = 0;
+        if (item.isHalfHalf && item.product2Id) {
+            const product2 = rawProducts.find(p => p.id === item.product2Id);
+            const price1 = (item.size && product.sizes) ? product.sizes[item.size as PizzaSize] : 0;
+            const price2 = (item.size && product2?.sizes) ? product2.sizes[item.size as PizzaSize] : 0;
+            price = Math.max(price1, price2);
+        } else {
+            price = (item.size && product.sizes) ? product.sizes[item.size as PizzaSize] : (product.price || 0);
+        }
+        return acc + (price * item.quantity);
+    }, 0);
   };
-  
-  const deleteCustomer = async (customerId: string) => {
-    await fetchAPI(`/api/customers/${customerId}`, { method: 'DELETE' });
-    // Listener will auto-update state
-    toast({ variant: 'destructive', title: 'Cliente Removido!', description: 'O cliente foi removido com sucesso.' });
+
+  const transformOrderItems = (items: AddOrderFormValues['items']): OrderItem[] => {
+    return items.map(item => {
+        const product1 = rawProducts.find(p => p.id === item.productId);
+        let productName = product1?.name || 'Produto não encontrado';
+        if (item.isHalfHalf && item.product2Id) {
+            const product2 = rawProducts.find(p => p.id === item.product2Id);
+            productName = `Meio a Meio: ${product1?.name.replace('Pizza ', '')} / ${product2?.name.replace('Pizza ', '')}`;
+        }
+        return {
+            ...item,
+            productName: productName,
+        };
+    });
   };
 
-  const calculateOrderTotal = (items: AddOrderFormValues['items'], products: Product[]): number => items.reduce((acc, item) => {
-    const p1 = products.find(p => p.id === item.productId);
-    if (!p1) return acc;
-    if (item.isHalfHalf && item.size) {
-      const p2 = products.find(p => p.id === item.product2Id);
-      const price1 = p1.sizes?.[item.size as PizzaSize] ?? 0;
-      const price2 = p2?.sizes?.[item.size as PizzaSize] ?? 0;
-      return acc + Math.max(price1, price2) * item.quantity;
-    }
-    const price = p1.sizes && item.size ? p1.sizes[item.size] || 0 : p1.price || 0;
-    return acc + price * item.quantity;
-  }, 0);
+  const findOrCreateCustomer = async (name: string, phone: string | undefined): Promise<Customer | undefined> => {
+      if (!phone) return undefined;
+      const normalizedPhone = phone.replace(/\D/g, '');
+      const existingCustomer = rawCustomers.find(c => c.phone === normalizedPhone);
+      if (existingCustomer) return existingCustomer;
 
-  const transformOrderItems = (items: AddOrderFormValues['items'], products: Product[]): OrderItem[] => items.map(item => {
-    const p1 = products.find(p => p.id === item.productId);
-    let productName = p1?.name ?? 'N/A';
-    
-    if (item.isHalfHalf && item.product2Id) {
-      const p2 = products.find(p => p.id === item.product2Id);
-      const name1 = p1?.name.replace('Pizza ', '') || '';
-      const name2 = p2?.name.replace('Pizza ', '') || '';
-      productName = `Meio a Meio: ${name1} / ${name2}`;
-    }
-    
-    return { productName, quantity: item.quantity, size: item.size };
-  });
-
-  const _updateOrderAPI = async (orderId: string, data: Partial<Order>) => {
-    const updatedOrder = await fetchAPI(`/api/orders/${orderId}`, { method: 'PUT', body: JSON.stringify(data) });
-    // Listener will auto-update state
-    return updatedOrder;
+      const newCustomerData: CustomerData = { name, phone: normalizedPhone };
+      const newCustomer = await fetchAPI('/api/customers', { method: 'POST', body: JSON.stringify(newCustomerData) });
+      return newCustomer;
   };
 
   const addOrder = async (data: AddOrderFormValues): Promise<Order | null> => {
     try {
-      const total = calculateOrderTotal(data.items, products);
-      const newOrder = await fetchAPI('/api/orders', { method: 'POST', body: JSON.stringify({ ...data, total, items: transformOrderItems(data.items, products) }) });
-      // Listener will auto-update state
-      await addOrUpdateCustomer({ name: data.customerName, phone: data.customerPhone || '', orderTotal: total });
+      const customer = await findOrCreateCustomer(data.customerName, data.customerPhone);
+      const total = calculateOrderTotal(data.items);
+      const payload = { ...data, items: transformOrderItems(data.items), total, customerId: customer?.id };
+      const newOrder = await fetchAPI('/api/orders', { method: 'POST', body: JSON.stringify(payload) });
       toast({ title: 'Sucesso!', description: 'Pedido adicionado.' });
       return newOrder;
-    } catch (e) {
-      toast({ variant: 'destructive', title: 'Erro!', description: 'Não foi possível criar o pedido.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Erro!', description: `Não foi possível criar o pedido: ${e.message}` });
       return null;
     }
   };
 
   const updateOrder = async (orderId: string, data: AddOrderFormValues) => {
-    const total = calculateOrderTotal(data.items, products);
-    await _updateOrderAPI(orderId, { ...data, total, items: transformOrderItems(data.items, products) });
+    const total = calculateOrderTotal(data.items);
+    const customer = await findOrCreateCustomer(data.customerName, data.customerPhone);
+    const payload = { ...data, items: transformOrderItems(data.items), total, customerId: customer?.id };
+    await fetchAPI(`/api/orders/${orderId}`, { method: 'PUT', body: JSON.stringify(payload) });
     toast({ title: 'Sucesso!', description: 'Pedido atualizado.' });
   };
   
   const advanceOrderStatus = async (orderId: string) => {
-    const order = orders.find((o) => o.id === orderId);
+    const order = rawOrders.find((o) => o.id === orderId);
     if (!order) return;
-    const currentIndex = orderStatuses.indexOf(order.status);
-    if (currentIndex < 0 || currentIndex >= orderStatuses.length - 2) return;
-    const nextStatus = (order.status === 'Pronto' && order.orderType === 'retirada') ? 'Entregue' : orderStatuses[currentIndex + 1];
-    await _updateOrderAPI(orderId, { status: nextStatus });
-    toast({ title: 'Status do Pedido Atualizado!' });
+  
+    let nextStatus: OrderStatus | undefined;
+  
+    if (order.status === 'Em Entrega') {
+      nextStatus = 'Entregue';
+    } else {
+      const currentIndex = kanbanStatuses.map(s => s.status).indexOf(order.status);
+      if (currentIndex >= 0 && currentIndex < kanbanStatuses.length - 1) {
+        nextStatus = kanbanStatuses[currentIndex + 1].status;
+      }
+    }
+  
+    if (order.status === 'Pronto' && order.orderType === 'retirada') {
+      nextStatus = 'Entregue';
+    }
+  
+    if (nextStatus) {
+      await fetchAPI(`/api/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ status: nextStatus }) });
+      toast({ title: 'Status do Pedido Atualizado!' });
+    }
   };
+  
 
   const cancelOrder = async (orderId: string) => {
-    await _updateOrderAPI(orderId, { status: 'Cancelado' });
+    await fetchAPI(`/api/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ status: 'Cancelado' }) });
     toast({ title: 'Pedido Cancelado' });
   };
 
   const deleteAllOrders = async () => {
     await fetchAPI('/api/orders/delete-all', { method: 'DELETE' });
-    // Listener will auto-update state
     toast({ title: 'Sucesso!', description: 'Todos os pedidos foram arquivados.' });
   };
   
   return (
-    <UserContext.Provider value={{ currentUser, isLoading, users, customers, products, orders, orderStatuses, getAuthToken, login, logout, registerUser, updateUser, deleteUser, updateUserStatus, updateUserRole, addOrUpdateCustomer, deleteCustomer, toggleProductAvailability, addProduct, updateProduct, deleteProduct, addOrder, updateOrder, cancelOrder, advanceOrderStatus, deleteAllOrders }}>
+    <UserContext.Provider value={{ currentUser, isLoading, users: rawUsers, customers: aggregatedCustomers, products: rawProducts, orders: rawOrders, orderStatuses, getAuthToken, login, logout, registerUser, updateUser, deleteUser, updateUserStatus, updateUserRole, addOrUpdateCustomer, deleteCustomer, toggleProductAvailability, addProduct, updateProduct, deleteProduct, addOrder, updateOrder, cancelOrder, advanceOrderStatus, deleteAllOrders }}>
       {children}
     </UserContext.Provider>
   );

@@ -69,30 +69,30 @@ export default function DashboardPage() {
         <DailyRevenueCard />
         <Link href="/pedidos">
            <Card className="shadow-md hover:shadow-lg transition-shadow h-full">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:pb-2">
               <CardTitle className="text-sm font-medium">Total de Pedidos Válidos</CardTitle>
               <TrendingUp className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalOrders}</div>
+              <div className="text-2xl sm:text-3xl font-bold">{totalOrders}</div>
               <p className="text-xs text-muted-foreground">Total de pedidos não cancelados hoje</p>
             </CardContent>
           </Card>
         </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {statCards.map(({ status, title, icon: Icon, color }) => {
           const href = status === 'Em Entrega' ? '/entregas' : `/pedidos?status=${status}`;
           return(
           <Link href={href} key={status}>
             <Card className="shadow-md hover:shadow-lg transition-shadow h-full">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:pb-2">
                 <CardTitle className="text-sm font-medium">{title}</CardTitle>
                 <Icon className={cn("h-4 w-4", color)} />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{getOrderCountByStatus(status)}</div>
+              <CardContent className="p-4 pt-0 sm:pt-2">
+                <div className="text-2xl sm:text-3xl font-bold">{getOrderCountByStatus(status)}</div>
                  <p className="text-xs text-muted-foreground">Total de pedidos neste status</p>
               </CardContent>
             </Card>
@@ -107,38 +107,40 @@ export default function DashboardPage() {
             <CardTitle>Últimos Pedidos</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">Pedido</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead className="hidden md:table-cell">Itens</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-center w-[120px]">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.slice(0, 5).map(order => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">#{order.orderNumber}</TableCell>
-                    <TableCell>
-                      {order.customerName}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {order.items.map(i => i.productName).join(', ')}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className={cn("border text-xs", getStatusBadgeClasses(order.status))}>
-                        {order.status}
-                      </Badge>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[120px]">Pedido</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="hidden md:table-cell">Itens</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-center w-[120px]">Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {orders.slice(0, 5).map(order => (
+                    <TableRow key={order.id}>
+                      <TableCell className="font-medium">#{order.orderNumber}</TableCell>
+                      <TableCell>
+                        {order.customerName}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                        {order.items.map(i => i.productName).join(', ')}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className={cn("border text-xs", getStatusBadgeClasses(order.status))}>
+                          {order.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>

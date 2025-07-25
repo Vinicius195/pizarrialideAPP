@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/firebase-admin';
 import type { Customer } from '@/types';
+import { normalizePhoneNumber } from '@/lib/utils';
 
 // GET all customers OR find a specific customer by phone
 export async function GET(request: Request) {
@@ -9,46 +10,58 @@ export async function GET(request: Request) {
     const phone = searchParams.get('phone');
     const customersCollection = db.collection('customers');
 
-    // If a phone number is provided, search for that specific customer
     if (phone) {
-      const querySnapshot = await customersCollection.where('phone', '==', phone).limit(1).get();
+      const normalizedPhone = normalizePhoneNumber(phone);
+      const querySnapshot = await customersCollection.where('phone', '==', normalizedPhone).limit(1).get();
+      
       if (querySnapshot.empty) {
-        // Return a specific not-found response for the search
-        return new NextResponse('Customer not found', { status: 404 });
+        return new NextResponse(`Customer with phone ${normalizedPhone} not found`, { status: 404 });
       }
+
       const customerDoc = querySnapshot.docs[0];
       const customer = { id: customerDoc.id, ...customerDoc.data() } as Customer;
       return NextResponse.json(customer);
     }
 
-    // If no phone number is provided, return all customers
     const customersSnapshot = await customersCollection.orderBy('name').get();
     const customers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[];
     return NextResponse.json(customers);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching customers:", error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return new NextResponse(error.message || 'Internal Server Error', { status: 500 });
   }
 }
-
 
 // POST a new customer
 export async function POST(request: Request) {
   try {
-    const customerData: Omit<Customer, 'id' | 'lastOrderDate'> = await request.json();
+    const customerData: Omit<Customer, 'id'> = await request.json();
+    
+    if (!customerData.phone) {
+      return new NextResponse('Phone number is required', { status: 400 });
+    }
+
+    const normalizedPhone = normalizePhoneNumber(customerData.phone);
+
+    const existingCustomerQuery = await db.collection('customers').where('phone', '==', normalizedPhone).limit(1).get();
+    if (!existingCustomerQuery.empty) {
+        const existingCustomer = existingCustomerQuery.docs[0].data() as Customer;
+        return new NextResponse(`Customer with phone ${normalizedPhone} already exists with name ${existingCustomer.name}`, { status: 409 });
+    }
     
     const finalCustomerData = {
       ...customerData,
-      lastOrderDate: new Date().toISOString(), // Set server-side timestamp
+      phone: normalizedPhone,
+      lastOrderDate: new Date().toISOString(),
     };
 
     const newCustomerRef = await db.collection('customers').add(finalCustomerData);
     const newCustomer = await newCustomerRef.get();
 
     return NextResponse.json({ id: newCustomer.id, ...newCustomer.data() }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating customer:", error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return new NextResponse(error.message || 'Internal Server Error', { status: 500 });
   }
 }

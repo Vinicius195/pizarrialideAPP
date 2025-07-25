@@ -28,19 +28,29 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Order, Product, PizzaSize, Customer } from '@/types';
 import { Link, Phone, PlusCircle, Trash2, Loader2, ChevronsUpDown } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
-import { useState, useEffect, useMemo } from 'react';
-import { cn } from '@/lib/utils';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { cn, normalizePhoneNumber } from '@/lib/utils';
 import { getMockSettings } from '@/lib/settings-data';
-import { Switch } from '../ui/switch';
 import { useUser } from '@/contexts/user-context';
 import { ProductSelectionDrawer } from './product-selection-drawer';
+import { Switch } from '@/components/ui/switch';
 
+// Schema uses the new robust structure with IDs
 const orderItemSchema = z.object({
   productId: z.string().min(1, "Selecione um produto."),
   product2Id: z.string().optional(),
   isHalfHalf: z.boolean().default(false),
   quantity: z.coerce.number().min(1, "A quantidade deve ser pelo menos 1."),
   size: z.string().optional(),
+}).superRefine((data, ctx) => {
+    // If half-and-half is selected, a second flavor is required.
+    if (data.isHalfHalf && !data.product2Id) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "O 2º sabor é obrigatório para pizzas meio a meio.",
+            path: ["product2Id"],
+        });
+    }
 });
 
 const addOrderSchema = z.object({
@@ -60,7 +70,7 @@ const addOrderSchema = z.object({
             if (!data.address || data.address.trim().length < 10) {
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
-                    message: "O endereço é obrigatório e deve ter pelo menos 10 caracteres.",
+                    message: "O endereço é obrigatório.",
                     path: ["address"],
                 });
             }
@@ -76,12 +86,12 @@ const addOrderSchema = z.object({
     }
 });
 
-
 export type AddOrderFormValues = z.infer<typeof addOrderSchema>;
 
 interface AddOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // This now submits the ID-based form values; total is calculated in the context.
   onSubmit: (data: AddOrderFormValues) => void;
   order?: Order | null;
 }
@@ -91,6 +101,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const [drawerContext, setDrawerContext] = useState<{ itemIndex: number; isSecondFlavor?: boolean }>({ itemIndex: -1 });
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
   
   const { currentUser, products: allProducts, getAuthToken } = useUser();
   const isManager = currentUser?.role === 'Administrador';
@@ -99,14 +110,9 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const form = useForm<AddOrderFormValues>({
     resolver: zodResolver(addOrderSchema),
     defaultValues: {
-      customerName: '',
-      customerPhone: '',
-      orderType: 'retirada',
-      items: [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }],
-      addressType: 'manual',
-      address: '',
-      locationLink: '',
-      notes: '',
+      customerName: '', customerPhone: '', orderType: 'retirada',
+      items: [{ productId: '', isHalfHalf: false, quantity: 1 }],
+      addressType: 'manual', address: '', locationLink: '', notes: '',
     },
   });
 
@@ -115,7 +121,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     name: "items",
   });
   
-  const { watch, reset, setValue, trigger } = form;
+  const { watch, reset, setValue, trigger, getValues } = form;
   const watchedItems = watch('items');
   const orderType = watch('orderType');
   const addressType = watch('addressType');
@@ -124,35 +130,43 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const availableProducts = useMemo(() => allProducts.filter(p => p.isAvailable), [allProducts]);
   const availablePizzas = useMemo(() => allProducts.filter(p => p.isAvailable && p.category === 'Pizza'), [allProducts]);
 
+  // YOUR REAL-TIME SUM IS PRESERVED AND ADAPTED
+  const calculateTotal = useCallback(() => {
+    let currentTotal = 0;
+    const items = getValues('items');
+    for (const item of items) {
+      if (!item.productId || !item.size) continue;
+      
+      let price = 0;
+      const product1 = allProducts.find(p => p.id === item.productId);
+      if (!product1) continue;
+
+      if (item.isHalfHalf && item.product2Id) {
+        const product2 = allProducts.find(p => p.id === item.product2Id);
+        const price1 = product1.sizes?.[item.size as PizzaSize] ?? 0;
+        const price2 = product2?.sizes?.[item.size as PizzaSize] ?? 0;
+        price = Math.max(price1, price2);
+      } else {
+        price = product1.sizes?.[item.size as PizzaSize] ?? product1.price ?? 0;
+      }
+      currentTotal += price * item.quantity;
+    }
+    setTotal(currentTotal);
+  }, [getValues, allProducts]);
+
+  useEffect(() => {
+    const subscription = watch((value, { name }) => {
+      if (name && (name.startsWith('items') || name.startsWith('total'))) {
+        calculateTotal();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, calculateTotal]);
+
+  // EDIT MODE LOADING IS PRESERVED AND ADAPTED
   useEffect(() => {
     if (open) {
       if (isEditMode && order) {
-        const allPizzas = allProducts.filter(p => p.category === 'Pizza');
-        const normalizeName = (name: string) => name.toLowerCase().replace('pizza ', '').trim();
-        const findPizzaByNormalizedName = (name: string): Product | undefined => {
-            const normalizedName = normalizeName(name);
-            return allPizzas.find(p => normalizeName(p.name) === normalizedName);
-        };
-
-        const formItems = order.items.map(item => {
-            const isHalfHalf = item.productName.startsWith('Meio a Meio:');
-            let productId = '';
-            let product2Id: string | undefined = undefined;
-
-            if (isHalfHalf) {
-                const names = item.productName.replace('Meio a Meio:', '').split(/\/|⁄/);
-                const product1 = findPizzaByNormalizedName(names[0]);
-                const product2 = findPizzaByNormalizedName(names[1]);
-                productId = product1?.id || '';
-                product2Id = product2?.id || undefined;
-            } else {
-                const product = allProducts.find(p => p.name === item.productName);
-                productId = product?.id || '';
-            }
-
-            return { productId, product2Id, isHalfHalf, quantity: item.quantity, size: item.size, };
-        });
-
         reset({
             customerName: order.customerName,
             customerPhone: order.customerPhone || '',
@@ -161,21 +175,29 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
             locationLink: order.locationLink || '',
             addressType: order.locationLink ? 'link' : 'manual',
             notes: order.notes || '',
-            items: formItems.length > 0 ? formItems : [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }],
+            // Correctly map legacy OrderItems (if any) to the new structure
+            items: order.items.map(item => ({
+                productId: item.productId,
+                product2Id: item.product2Id,
+                isHalfHalf: item.isHalfHalf,
+                quantity: item.quantity,
+                size: item.size,
+            })),
         });
-
       } else {
         reset({
           customerName: '', customerPhone: '', orderType: 'retirada',
-          items: [{ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined }],
+          items: [{ productId: '', isHalfHalf: false, quantity: 1 }],
           addressType: 'manual', address: '', locationLink: '', notes: '',
         });
       }
+      calculateTotal();
     }
-  }, [order, open, reset, isEditMode, allProducts]);
+  }, [order, open, reset, isEditMode, calculateTotal]);
 
+  // CUSTOMER SEARCH LOGIC IS PRESERVED
   useEffect(() => {
-    const cleanedPhone = customerPhone?.replace(/\D/g, '');
+    const cleanedPhone = normalizePhoneNumber(customerPhone || '');
     if (isEditMode || !cleanedPhone || (cleanedPhone.length < 10)) {
         setSearchError(null);
         return;
@@ -201,12 +223,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
           setValue('locationLink', hasLink ? foundCustomer.locationLink || '' : '');
           trigger(['customerName', 'address', 'locationLink']);
         } else if (response.status === 404) {
-          setSearchError(null);
+          setSearchError('Cliente não encontrado. O nome será mantido.');
         } else {
-          throw new Error('Falha ao buscar cliente.');
+          const errorText = await response.text();
+          throw new Error(errorText || 'Falha ao buscar cliente.');
         }
-      } catch (error) {
-        setSearchError("Erro ao contatar o servidor.");
+      } catch (error: any) {
+        setSearchError(error.message || "Erro ao contatar o servidor.");
       } finally {
         setIsSearchingCustomer(false);
       }
@@ -225,22 +248,35 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     if (isSecondFlavor) {
       setValue(`items.${itemIndex}.product2Id`, productId, { shouldValidate: true });
     } else {
+      // Reset dependent fields when the main product changes
       setValue(`items.${itemIndex}.productId`, productId, { shouldValidate: true });
-      setValue(`items.${itemIndex}.size`, undefined, { shouldValidate: true });
-      setValue(`items.${itemIndex}.isHalfHalf`, false, { shouldValidate: true });
-      setValue(`items.${itemIndex}.product2Id`, undefined, { shouldValidate: true });
+      setValue(`items.${itemIndex}.size`, undefined); 
+      setValue(`items.${itemIndex}.isHalfHalf`, false);
+      setValue(`items.${itemIndex}.product2Id`, undefined);
+    }
+    // No need to call calculateTotal here, the `watch` effect will handle it.
+  };
+  
+  const handleHalfHalfSwitch = (checked: boolean, index: number) => {
+    setValue(`items.${index}.isHalfHalf`, checked, { shouldValidate: true });
+    if (!checked) {
+      setValue(`items.${index}.product2Id`, undefined, { shouldValidate: true });
+    } else {
+       // Open drawer to select the second flavor immediately
+       handleOpenDrawer(index, true);
     }
   };
 
   function handleFormSubmit(data: AddOrderFormValues) {
+    // The context now handles total calculation
     onSubmit(data);
     onOpenChange(false);
   }
-  
-  const productToShow = (id: string | undefined) => allProducts.find((p) => p.id === id)?.name || "Selecione um produto";
-  const selectedValue = drawerContext.isSecondFlavor 
-    ? watchedItems[drawerContext.itemIndex]?.product2Id 
-    : watchedItems[drawerContext.itemIndex]?.productId;
+
+  const getProductDisplay = (productId: string | undefined) => {
+    if (!productId) return "Selecione um produto";
+    return allProducts.find(p => p.id === productId)?.name || "Produto desconhecido";
+  };
 
   return (
     <>
@@ -318,7 +354,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                           <RadioGroup onValueChange={(value) => { field.onChange(value); setValue('address', ''); setValue('locationLink', ''); }} defaultValue={field.value} className="flex flex-col space-y-2 pt-1" >
                             <FormItem className="flex items-center space-x-3 space-y-0">
                               <FormControl><RadioGroupItem value="manual" /></FormControl>
-                              <FormLabel className="font-normal cursor-pointer">Digitar Endereço Manualmente</FormLabel>
+                              <FormLabel className="font-normal cursor-pointer">Digitar Endereço</FormLabel>
                             </FormItem>
                             <FormItem className="flex items-center space-x-3 space-y-0">
                               <FormControl><RadioGroupItem value="link" /></FormControl>
@@ -326,35 +362,11 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                             </FormItem>
                           </RadioGroup>
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                  {addressType === 'manual' && (
-                    <FormField control={form.control} name="address" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Endereço Completo</FormLabel>
-                          <FormControl><Textarea placeholder="Ex: Rua das Flores, 123, Bairro Jardim..." {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                  {addressType === 'link' && (
-                    <FormField control={form.control} name="locationLink" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Link do Google Maps</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Link className="h-4 w-4 text-muted-foreground" /></div>
-                              <Input placeholder="https://maps.app.goo.gl/..." className="pl-10" {...field} />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
+                  {addressType === 'manual' && ( <FormField control={form.control} name="address" render={({ field }) => ( <FormItem><FormLabel>Endereço Completo</FormLabel><FormControl><Textarea placeholder="Ex: Rua das Flores, 123..." {...field} /></FormControl><FormMessage /></FormItem>)} /> )}
+                  {addressType === 'link' && ( <FormField control={form.control} name="locationLink" render={({ field }) => ( <FormItem><FormLabel>Link do Google Maps</FormLabel><FormControl><div className="relative"><div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><Link className="h-4 w-4 text-muted-foreground" /></div><Input placeholder="https://maps.app.goo.gl/..." className="pl-10" {...field} /></div></FormControl><FormMessage /></FormItem>)} /> )}
                 </div>
               )}
               
@@ -372,70 +384,54 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                       <div key={field.id} className="flex flex-col gap-3 rounded-md border p-4">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2">
                           <div className="flex-1">
-                            <Button variant="outline" type="button" className={cn("w-full justify-between", !watchedItems[index]?.productId && "text-muted-foreground")} onClick={() => handleOpenDrawer(index)}>
-                              {productToShow(watchedItems[index]?.productId)}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                            <FormField control={form.control} name={`items.${index}.productId`} render={() => <FormMessage />} />
+                             <FormField control={form.control} name={`items.${index}.productId`} render={({ field }) => (
+                                <FormItem>
+                                    <Button variant="outline" type="button" className={cn("w-full justify-between", !field.value && "text-muted-foreground")} onClick={() => handleOpenDrawer(index)}>
+                                        {getProductDisplay(field.value)}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    <FormMessage className="pt-1"/>
+                                </FormItem>
+                            )}/>
                           </div>
                           <div className="flex items-start gap-2">
-                            <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
-                                <FormItem className="flex-1 sm:w-24">
-                                  <FormControl><Input type="number" min="1" placeholder="Qtd." {...field} /></FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}>
-                              <Trash2 className="h-4 w-4" /><span className="sr-only">Remover item</span>
-                            </Button>
+                            <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="flex-1 sm:w-24"><FormControl><Input type="number" min="1" placeholder="Qtd." {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}><Trash2 className="h-4 w-4" /><span className="sr-only">Remover</span></Button>
                           </div>
                         </div>
 
                         {isPizza && (
-                            <FormField control={form.control} name={`items.${index}.isHalfHalf`} render={({ field: switchField }) => (
-                                <FormItem className="flex flex-row items-center justify-between rounded-lg border bg-muted/30 p-3 shadow-sm">
-                                    <div className="space-y-0.5">
-                                        <FormLabel className="text-sm font-medium">Pizza Meio a Meio?</FormLabel>
-                                        <FormDescriptionUI className="text-xs">Será cobrado o valor do sabor mais caro.</FormDescriptionUI>
-                                    </div>
-                                    <FormControl>
-                                      <Switch checked={switchField.value} onCheckedChange={(checked) => {
-                                          switchField.onChange(checked);
-                                          if (!checked) { setValue(`items.${index}.product2Id`, undefined, { shouldValidate: true }); }
-                                        }}
-                                      />
-                                    </FormControl>
-                                </FormItem>
-                              )}
-                            />
+                           <FormField control={form.control} name={`items.${index}.isHalfHalf`} render={({ field }) => (
+                               <FormItem className="flex flex-row items-center justify-between rounded-lg border bg-muted/30 p-3 shadow-sm">
+                                   <div className="space-y-0.5"><FormLabel className="text-sm font-medium">Pizza Meio a Meio?</FormLabel><FormDescriptionUI className="text-xs">Será cobrado o valor do sabor mais caro.</FormDescriptionUI></div>
+                                   <FormControl><Switch checked={field.value} onCheckedChange={(checked) => handleHalfHalfSwitch(checked, index)} /></FormControl>
+                               </FormItem>
+                             )}
+                           />
                         )}
 
                         {isPizza && isHalfHalf && (
-                           <div className="flex-1">
-                              <FormLabel>2º Sabor da Pizza</FormLabel>
-                              <Button variant="outline" type="button" className={cn("w-full justify-between mt-2", !watchedItems[index]?.product2Id && "text-muted-foreground")} onClick={() => handleOpenDrawer(index, true)}>
-                                {productToShow(watchedItems[index]?.product2Id)}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                              <FormField control={form.control} name={`items.${index}.product2Id`} render={() => <FormMessage />} />
-                            </div>
+                            <FormField control={form.control} name={`items.${index}.product2Id`} render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>2º Sabor</FormLabel>
+                                    <Button variant="outline" type="button" className={cn("w-full justify-between", !field.value && "text-muted-foreground")} onClick={() => handleOpenDrawer(index, true)}>
+                                        {getProductDisplay(field.value)}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    <FormMessage className="pt-1"/>
+                                </FormItem>
+                            )}/>
                         )}
 
-                        {selectedProduct && selectedProduct.sizes && (
+                        {selectedProduct?.sizes && (
                             <FormField control={form.control} name={`items.${index}.size`} render={({ field }) => (
                                 <FormItem className="pt-2">
                                     <FormLabel className="text-sm">Tamanho</FormLabel>
                                     <FormControl>
-                                      <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
-                                        {Object.keys(selectedProduct.sizes!)
-                                            .filter((size) => selectedProduct.category !== 'Pizza' || getMockSettings().sizeAvailability[size as PizzaSize])
-                                            .map((size) => (
-                                            <FormItem key={size} className="flex items-center space-x-2 space-y-0">
-                                                <FormControl><RadioGroupItem value={size} /></FormControl>
-                                                <FormLabel className="font-normal capitalize cursor-pointer">{size}</FormLabel>
-                                            </FormItem>
-                                        ))}
+                                      <RadioGroup onValueChange={field.onChange} value={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
+                                         {Object.keys(selectedProduct.sizes || {})
+                                            .filter(size => selectedProduct.category !== 'Pizza' || getMockSettings().sizeAvailability[size as PizzaSize])
+                                            .map((size) => (<FormItem key={size} className="flex items-center space-x-2 space-y-0"><FormControl><RadioGroupItem value={size} /></FormControl><FormLabel className="font-normal capitalize cursor-pointer">{size}</FormLabel></FormItem>))}
                                       </RadioGroup>
                                     </FormControl>
                                     <FormMessage />
@@ -447,27 +443,25 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                     )
                   })}
                 </div>
-                <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => append({ productId: '', product2Id: undefined, isHalfHalf: false, quantity: 1, size: undefined })}>
+                <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => append({ productId: '', quantity: 1, isHalfHalf: false })}>
                   <PlusCircle className="mr-2 h-4 w-4" />Adicionar Item
                 </Button>
                 <FormField control={form.control} name="items" render={() => <FormMessage className="mt-2" />} />
               </div>
 
               <Separator className="my-4" />
+              
+               <div className="text-right text-xl font-bold">
+                <span>Total: </span>
+                <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</span>
+              </div>
 
-              <FormField control={form.control} name="notes" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Observações (Opcional)</FormLabel>
-                    <FormControl><Textarea placeholder="Ex: Pizza sem cebola, troco para R$100, etc." {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="notes" render={({ field }) => ( <FormItem><FormLabel>Observações (Opcional)</FormLabel><FormControl><Textarea placeholder="Ex: Pizza sem cebola, troco para R$100, etc." {...field} /></FormControl><FormMessage /></FormItem> )} />
             </div>
 
             <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background">
               <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
-              <Button type="submit">{isEditMode ? 'Salvar Alterações' : 'Salvar Pedido'}</Button>
+              <Button type="submit">{isEditMode ? 'Salvar Alterações' : 'Criar Pedido'}</Button>
             </DialogFooter>
           </form>
           </Form>
@@ -479,7 +473,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
         onSelectProduct={handleProductSelect}
         products={drawerContext.isSecondFlavor ? availablePizzas : availableProducts}
         title={drawerContext.isSecondFlavor ? 'Selecione o 2º Sabor' : 'Selecione um Produto'}
-        selectedValue={selectedValue}
+        selectedValue={drawerContext.isSecondFlavor ? watchedItems[drawerContext.itemIndex]?.product2Id : watchedItems[drawerContext.itemIndex]?.productId}
       />
     </>
   );

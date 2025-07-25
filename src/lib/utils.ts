@@ -12,3 +12,8 @@ export function formatTimestamp(timestamp: string): string {
     minute: '2-digit',
   });
 }
+
+export function normalizePhoneNumber(phone: string): string {
+  // Remove all non-digit characters
+  return phone.replace(/\D/g, '');
+}

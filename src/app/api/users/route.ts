@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase-admin';
-import admin from 'firebase-admin';
+import { db, authAdmin } from '@/lib/firebase-admin';
 import type { UserProfile } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
@@ -58,7 +57,7 @@ export async function POST(request: Request) {
   try {
     const { email, password, name, role } = await request.json();
 
-    const userRecord = await admin.auth().createUser({
+    const userRecord = await authAdmin.createUser({
       email,
       password,
       displayName: name,

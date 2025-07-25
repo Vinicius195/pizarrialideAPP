@@ -11,9 +11,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 interface ProductSelectionDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // CORRECTED: This now expects the product ID for robust handling.
   onSelectProduct: (productId: string) => void;
   products: Product[];
   title?: string;
+  // This value is the product ID of the currently selected item.
   selectedValue?: string;
 }
 
@@ -47,6 +49,7 @@ export function ProductSelectionDrawer({
       {} as Record<Product['category'], Product[]>
     ), [filteredProducts]);
 
+  // CORRECTED: This now handles the product ID.
   const handleSelect = (productId: string) => {
     onSelectProduct(productId);
     onOpenChange(false);
@@ -77,9 +80,11 @@ export function ProductSelectionDrawer({
                         key={product.id}
                         variant="ghost"
                         className="w-full justify-between items-center"
+                        // CORRECTED: Passing product.id to the handler
                         onClick={() => handleSelect(product.id)}
                       >
                         <span>{product.name}</span>
+                        {/* CORRECTED: Comparing selectedValue (ID) with product.id */}
                         {selectedValue === product.id && <Check className="h-4 w-4" />}
                       </Button>
                     ))}

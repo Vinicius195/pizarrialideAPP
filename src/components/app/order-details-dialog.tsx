@@ -18,6 +18,7 @@ import { Clock, User, Tag, ShoppingCart, DollarSign, Bike, Store, MapPin, Link a
 import type { LucideIcon } from 'lucide-react';
 import { useUser } from '@/contexts/user-context';
 import { format } from 'date-fns';
+import { useEffect, useState } from 'react';
 
 interface OrderDetailsDialogProps {
   order: Order | null;
@@ -55,6 +56,40 @@ const DetailRow = ({ icon: Icon, label, children }: { icon: LucideIcon; label: s
         </div>
     </div>
 );
+
+const SmartMapLink = ({ gmapsUrl, address }: { gmapsUrl?: string, address?: string }) => {
+    const [mapHref, setMapHref] = useState(gmapsUrl || '#');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && navigator.userAgent) {
+            const userAgent = navigator.userAgent.toLowerCase();
+            const isIOS = /iphone|ipad|ipod/.test(userAgent);
+            const isAndroid = /android/.test(userAgent);
+
+            if (gmapsUrl) {
+                setMapHref(gmapsUrl); 
+            } else if (address) {
+                const encodedAddress = encodeURIComponent(address);
+                if (isIOS) {
+                    setMapHref(`maps://?q=${encodedAddress}`);
+                } else if (isAndroid) {
+                    setMapHref(`geo:0,0?q=${encodedAddress}`);
+                } else {
+                    setMapHref(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`);
+                }
+            }
+        }
+    }, [gmapsUrl, address]);
+
+    return (
+        <Button asChild variant="link" className="h-auto p-0 text-sm">
+            <a href={mapHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2">
+                <LinkIcon className="h-4 w-4" />
+                Abrir no mapa
+            </a>
+        </Button>
+    );
+};
 
 export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDialogProps) {
   const { products } = useUser();
@@ -131,21 +166,9 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
                 {order.address && (
                   <p className="text-sm text-foreground/90 pl-6">{order.address}</p>
                 )}
-                {order.locationLink && (
-                  <div className="pl-6">
-                    <Button asChild variant="link" className="h-auto p-0 text-sm">
-                      <a
-                        href={order.locationLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2"
-                      >
-                        <LinkIcon className="h-4 w-4" />
-                        Abrir no mapa
-                      </a>
-                    </Button>
-                  </div>
-                )}
+                <div className="pl-6">
+                    <SmartMapLink gmapsUrl={order.locationLink} address={order.address} />
+                </div>
               </div>
             </>
           )}

@@ -1,82 +1,77 @@
 import * as admin from 'firebase-admin';
 
-let db: admin.firestore.Firestore;
-let authAdmin: admin.auth.Auth;
-let messagingAdmin: admin.messaging.Messaging; // Declarar a variável para o Messaging
-
-// Função para encapsular a lógica de inicialização e garantir que ela seja executada apenas uma vez.
+// This function initializes the Firebase Admin SDK if it hasn't been already.
 function initializeFirebaseAdmin() {
-  // Se o app já estiver inicializado (ex: em ambiente de desenvolvimento com HMR), não faz nada.
+  // Check if an app is already initialized to prevent errors during hot-reloads
   if (admin.apps.length > 0) {
-    return;
+    console.log('[FIREBASE INFO] Firebase Admin SDK already initialized.');
+    return admin.apps[0]; // Return the existing app instance
   }
 
-  // Obtenha as variáveis de ambiente.
+  // Retrieve credentials from environment variables
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKeyFromEnv = process.env.FIREBASE_PRIVATE_KEY;
 
-  console.log('--- Verificando credenciais do Firebase Admin ---');
-  console.log(`[DEBUG] FIREBASE_PROJECT_ID: ${projectId ? `Encontrado (${projectId.substring(0, 5)}...)` : 'NÃO ENCONTRADO'}`);
-  console.log(`[DEBUG] FIREBASE_CLIENT_EMAIL: ${clientEmail ? `Encontrado (${clientEmail.substring(0, 5)}...)` : 'NÃO ENCONTRADO'}`);
-  console.log(`[DEBUG] FIREBASE_PRIVATE_KEY: ${privateKeyFromEnv ? 'Encontrado' : 'NÃO ENCONTRADO'}`);
-
-  // Verifique se todas as credenciais necessárias estão presentes.
-  const hasAllCredentials = projectId && clientEmail && privateKeyFromEnv;
-
-  if (!hasAllCredentials) {
-    const errorMessage = '[AVISO DO FIREBASE] Credenciais do Admin SDK não configuradas. As rotas de API que dependem dele falharão.';
-    console.warn(errorMessage);
-    // Em um ambiente de produção, seria melhor lançar um erro.
+  // Validate that all required environment variables are present
+  if (!projectId || !clientEmail || !privateKeyFromEnv) {
+    const errorMsg = '[FIREBASE ADMIN ERROR] Missing credentials. Please ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are correctly set.';
+    console.error(errorMsg);
+    // In a production environment, it's better to fail hard
     if (process.env.NODE_ENV === 'production') {
-      throw new Error(errorMessage);
+      throw new Error(errorMsg);
     }
-    return;
+    return null; // In development, return null and let the getter functions handle it
   }
 
   try {
-    // Formate a chave privada corretamente.
+    // Correctly format the private key by replacing the literal `\\n` characters with actual newlines.
     const formattedPrivateKey = privateKeyFromEnv.replace(/\\n/g, '\n');
 
-    // Construa o objeto da conta de serviço.
     const serviceAccount: admin.ServiceAccount = {
       projectId,
       clientEmail,
       privateKey: formattedPrivateKey,
     };
 
-    // Inicialize o aplicativo.
-    admin.initializeApp({
+    // Initialize the Firebase Admin app
+    const app = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
 
-    console.log('[INFO DO FIREBASE] Firebase Admin SDK inicializado com sucesso.');
+    console.log('[FIREBASE INFO] Firebase Admin SDK initialized successfully.');
+    return app;
+
   } catch (error) {
-    console.error(
-      '[ERRO CRÍTICO DO FIREBASE] Falha ao inicializar o Firebase Admin SDK. Verifique o formato das suas variáveis de ambiente.',
-      error
-    );
+    console.error('[FIREBASE CRITICAL ERROR] Failed to initialize Firebase Admin SDK. This is often due to malformed credentials.', error);
+    // This crash is intentional if the Admin SDK is critical for the application
+    throw new Error('Could not initialize Firebase Admin SDK.');
   }
 }
 
-// Garante que a inicialização ocorra.
-initializeFirebaseAdmin();
+// Initialize the app
+const app = initializeFirebaseAdmin();
 
-// Atribua as instâncias DEPOIS de garantir a inicialização.
-if (admin.apps.length > 0) {
-  db = admin.firestore();
-  authAdmin = admin.auth();
-  messagingAdmin = admin.messaging(); // Inicializar o Messaging
-} else {
-  console.error('[ERRO FATAL DO FIREBASE] Instância do Firebase Admin não disponível.');
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('A inicialização do Firebase Admin falhou e o servidor não pode continuar.');
-  }
-  // Atribuir stubs ou mocks para evitar erros em desenvolvimento se a inicialização falhar
-  db = {} as admin.firestore.Firestore;
-  authAdmin = {} as admin.auth.Auth;
-  messagingAdmin = {} as admin.messaging.Messaging;
-}
+// --- Service Getters ---
+// These functions ensure you always get a valid service instance,
+// or they will throw a clear error if initialization failed.
 
-// Exporte todas as instâncias necessárias.
-export { db, authAdmin, messagingAdmin };
+const getDb = () => {
+  if (!app) throw new Error("Firestore Admin is not available. Check initialization logs.");
+  return admin.firestore(app);
+};
+
+const getAuthAdmin = () => {
+  if (!app) throw new Error("Auth Admin is not available. Check initialization logs.");
+  return admin.auth(app);
+};
+
+const getMessagingAdmin = () => {
+  if (!app) throw new Error("Messaging Admin is not available. Check initialization logs.");
+  return admin.messaging(app);
+};
+
+// Export the getter functions instead of the raw service objects
+export const db = getDb();
+export const authAdmin = getAuthAdmin();
+export const messagingAdmin = getMessagingAdmin();

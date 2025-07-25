@@ -32,6 +32,7 @@ if (firebaseConfig.apiKey) {
       icon: payload.data?.icon || '/icons/icon-192x192.png',
       // Add other options for better user experience
       badge: '/icons/icon-192x192.png', // An icon for the notification bar
+      vibrate: [200, 100, 200], // Add vibration pattern
       data: {
         url: payload.data?.url || '/', // URL to open on click
       },

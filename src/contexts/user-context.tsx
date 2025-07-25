@@ -8,7 +8,7 @@ import type { ProductFormValues } from '@/components/app/add-product-dialog';
 import { auth, db } from '@/lib/firebase-client';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ChefHat, Bike, Pizza, Package } from 'lucide-react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 
 // --- Helper Types ---
 export type RegisterDetails = Omit<UserProfile, 'key' | 'status' | 'avatar' | 'fallback' | 'password'> & { password_str: string; };
@@ -131,11 +131,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
             })
           );
 
-          // --- CORRECTED: Special listener for orders to filter out archived ones ---
-          const ordersQuery = query(collection(db, 'orders'), where('status', '!=', 'Arquivado'));
+          // --- Special listener for orders to filter out archived ones and sort them ---
+          const ordersQuery = query(
+            collection(db, 'orders'), 
+            where('status', '!=', 'Arquivado'),
+            orderBy('orderNumber', 'desc')
+          );
           const ordersUnsubscribe = onSnapshot(ordersQuery, (snapshot) => {
             const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
             setRawOrders(ordersData);
+          }, (error) => {
+            console.error("Erro ao buscar pedidos: ", error);
+            toast({
+              variant: "destructive",
+              title: "Erro ao carregar pedidos",
+              description: "Não foi possível carregar os pedidos. Verifique o console para mais detalhes. Pode ser necessário criar um índice no Firestore.",
+            });
           });
           unsubscribes.push(ordersUnsubscribe);
           

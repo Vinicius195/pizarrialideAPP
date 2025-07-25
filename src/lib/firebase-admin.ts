@@ -1,77 +1,77 @@
 import * as admin from 'firebase-admin';
+import { DecodedIdToken } from 'firebase-admin/auth';
 
-// This function initializes the Firebase Admin SDK if it hasn't been already.
+let db: admin.firestore.Firestore;
+let authAdmin: admin.auth.Auth;
+let messagingAdmin: admin.messaging.Messaging;
+
 function initializeFirebaseAdmin() {
-  // Check if an app is already initialized to prevent errors during hot-reloads
-  if (admin.apps.length > 0) {
-    console.log('[FIREBASE INFO] Firebase Admin SDK already initialized.');
-    return admin.apps[0]; // Return the existing app instance
-  }
-
-  // Retrieve credentials from environment variables
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKeyFromEnv = process.env.FIREBASE_PRIVATE_KEY;
-
-  // Validate that all required environment variables are present
-  if (!projectId || !clientEmail || !privateKeyFromEnv) {
-    const errorMsg = '[FIREBASE ADMIN ERROR] Missing credentials. Please ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are correctly set.';
-    console.error(errorMsg);
-    // In a production environment, it's better to fail hard
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(errorMsg);
+    // Evita reinicialização se já houver uma instância.
+    if (admin.apps.length > 0) {
+        const app = admin.apps[0];
+        if (app) {
+            db = admin.firestore(app);
+            authAdmin = admin.auth(app);
+            messagingAdmin = admin.messaging(app);
+        }
+        return;
     }
-    return null; // In development, return null and let the getter functions handle it
-  }
 
-  try {
-    // Correctly format the private key by replacing the literal `\\n` characters with actual newlines.
-    const formattedPrivateKey = privateKeyFromEnv.replace(/\\n/g, '\n');
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    // Linha corrigida para garantir que a substituição ocorra em uma única linha
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-    const serviceAccount: admin.ServiceAccount = {
-      projectId,
-      clientEmail,
-      privateKey: formattedPrivateKey,
-    };
+    if (!projectId || !clientEmail || !privateKey) {
+        console.error('As variáveis de ambiente do Firebase Admin não estão configuradas.');
+        throw new Error('As variáveis de ambiente do Firebase Admin não estão configuradas.');
+    }
 
-    // Initialize the Firebase Admin app
-    const app = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    try {
+        admin.initializeApp({
+            credential: admin.credential.cert({
+                projectId,
+                clientEmail,
+                privateKey,
+            }),
+            databaseURL: `https://${projectId}.firebaseio.com`
+        });
 
-    console.log('[FIREBASE INFO] Firebase Admin SDK initialized successfully.');
-    return app;
+        db = admin.firestore();
+        authAdmin = admin.auth();
+        messagingAdmin = admin.messaging();
+        console.log('Firebase Admin SDK inicializado com sucesso.');
 
-  } catch (error) {
-    console.error('[FIREBASE CRITICAL ERROR] Failed to initialize Firebase Admin SDK. This is often due to malformed credentials.', error);
-    // This crash is intentional if the Admin SDK is critical for the application
-    throw new Error('Could not initialize Firebase Admin SDK.');
-  }
+    } catch (error) {
+        console.error('Erro na inicialização do Firebase Admin:', error);
+        throw new Error('Não foi possível inicializar o Firebase Admin SDK.');
+    }
 }
 
-// Initialize the app
-const app = initializeFirebaseAdmin();
+// Inicializa o SDK do Firebase Admin
+initializeFirebaseAdmin();
 
-// --- Service Getters ---
-// These functions ensure you always get a valid service instance,
-// or they will throw a clear error if initialization failed.
+// Função para verificar o token de autenticação de uma requisição
+export async function verifyAuth(request: Request): Promise<DecodedIdToken | null> {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log('Nenhum token do Firebase foi passado no cabeçalho de autorização.');
+        return null;
+    }
+    
+    const token = authHeader.split('Bearer ')[1];
+    if (!token) {
+        return null;
+    }
 
-const getDb = () => {
-  if (!app) throw new Error("Firestore Admin is not available. Check initialization logs.");
-  return admin.firestore(app);
-};
+    try {
+        const decodedToken = await authAdmin.verifyIdToken(token);
+        return decodedToken;
+    } catch (error) {
+        console.error('Erro ao verificar o token do Firebase:', error);
+        return null;
+    }
+}
 
-const getAuthAdmin = () => {
-  if (!app) throw new Error("Auth Admin is not available. Check initialization logs.");
-  return admin.auth(app);
-};
-
-const getMessagingAdmin = () => {
-  if (!app) throw new Error("Messaging Admin is not available. Check initialization logs.");
-  return admin.messaging(app);
-};
-
-// Export the getter functions instead of the raw service objects
-export const db = getDb();
-export const authAdmin = getAuthAdmin();
-export const messagingAdmin = getMessagingAdmin();
+// Exporta as instâncias inicializadas do admin
+export { db, authAdmin, messagingAdmin };

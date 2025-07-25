@@ -19,6 +19,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [currentUser, isLoading, router]);
   
+  // Unlock vibration API on first user interaction
+  useEffect(() => {
+    const unlockVibration = () => {
+      if ('vibrate' in navigator) {
+        // A 0ms vibration is not felt but satisfies the browser's requirement
+        // for a user-initiated vibration.
+        navigator.vibrate(0);
+      }
+      // Remove the event listener after it has run once.
+      window.removeEventListener('click', unlockVibration);
+      window.removeEventListener('touchstart', unlockVibration);
+    };
+
+    window.addEventListener('click', unlockVibration, { once: true });
+    window.addEventListener('touchstart', unlockVibration, { once: true });
+
+    return () => {
+      window.removeEventListener('click', unlockVibration);
+      window.removeEventListener('touchstart', unlockVibration);
+    };
+  }, []);
+
   if (isLoading || !currentUser) {
     return (
       <div className="flex min-h-screen w-full bg-background">

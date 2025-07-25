@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Order, Product, PizzaSize, Customer } from '@/types';
-import { Link, Phone, PlusCircle, Trash2, Loader2, ChevronsUpDown } from 'lucide-react';
+import { Link, Phone, PlusCircle, Trash2, Loader2, ChevronsUpDown, Plus } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { cn, normalizePhoneNumber } from '@/lib/utils';
@@ -91,10 +91,45 @@ export type AddOrderFormValues = z.infer<typeof addOrderSchema>;
 interface AddOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // This now submits the ID-based form values; total is calculated in the context.
   onSubmit: (data: AddOrderFormValues) => void;
   order?: Order | null;
 }
+
+// Visual component for product selection
+const ProductSelector = ({ 
+    productId, 
+    onClick, 
+    placeholder,
+    productName
+}: { 
+    productId: string | undefined;
+    onClick: () => void;
+    placeholder: string;
+    productName?: string;
+}) => {
+    if (productId && productName) {
+        return (
+            <div className="flex items-center justify-between w-full rounded-md border border-input bg-background p-3 text-sm">
+                <span className="font-medium truncate">{productName}</span>
+                <Button variant="ghost" size="sm" type="button" onClick={onClick} className="text-primary hover:text-primary -mr-2">
+                    Alterar
+                </Button>
+            </div>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted bg-muted/50 p-4 text-center text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted/80 hover:text-foreground"
+        >
+            <Plus className="h-6 w-6" />
+            <span className="text-sm font-medium">{placeholder}</span>
+        </button>
+    );
+};
+
 
 export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrderDialogProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -130,7 +165,6 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const availableProducts = useMemo(() => allProducts.filter(p => p.isAvailable), [allProducts]);
   const availablePizzas = useMemo(() => allProducts.filter(p => p.isAvailable && p.category === 'Pizza'), [allProducts]);
 
-  // YOUR REAL-TIME SUM IS PRESERVED AND ADAPTED
   const calculateTotal = useCallback(() => {
     let currentTotal = 0;
     const items = getValues('items');
@@ -163,7 +197,6 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     return () => subscription.unsubscribe();
   }, [watch, calculateTotal]);
 
-  // EDIT MODE LOADING IS PRESERVED AND ADAPTED
   useEffect(() => {
     if (open) {
       if (isEditMode && order) {
@@ -175,7 +208,6 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
             locationLink: order.locationLink || '',
             addressType: order.locationLink ? 'link' : 'manual',
             notes: order.notes || '',
-            // Correctly map legacy OrderItems (if any) to the new structure
             items: order.items.map(item => ({
                 productId: item.productId,
                 product2Id: item.product2Id,
@@ -195,7 +227,6 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     }
   }, [order, open, reset, isEditMode, calculateTotal]);
 
-  // CUSTOMER SEARCH LOGIC IS PRESERVED
   useEffect(() => {
     const cleanedPhone = normalizePhoneNumber(customerPhone || '');
     if (isEditMode || !cleanedPhone || (cleanedPhone.length < 10)) {
@@ -248,13 +279,11 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     if (isSecondFlavor) {
       setValue(`items.${itemIndex}.product2Id`, productId, { shouldValidate: true });
     } else {
-      // Reset dependent fields when the main product changes
       setValue(`items.${itemIndex}.productId`, productId, { shouldValidate: true });
       setValue(`items.${itemIndex}.size`, undefined); 
       setValue(`items.${itemIndex}.isHalfHalf`, false);
       setValue(`items.${itemIndex}.product2Id`, undefined);
     }
-    // No need to call calculateTotal here, the `watch` effect will handle it.
   };
   
   const handleHalfHalfSwitch = (checked: boolean, index: number) => {
@@ -262,21 +291,14 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     if (!checked) {
       setValue(`items.${index}.product2Id`, undefined, { shouldValidate: true });
     } else {
-       // Open drawer to select the second flavor immediately
        handleOpenDrawer(index, true);
     }
   };
 
   function handleFormSubmit(data: AddOrderFormValues) {
-    // The context now handles total calculation
     onSubmit(data);
     onOpenChange(false);
   }
-
-  const getProductDisplay = (productId: string | undefined) => {
-    if (!productId) return "Selecione um produto";
-    return allProducts.find(p => p.id === productId)?.name || "Produto desconhecido";
-  };
 
   return (
     <>
@@ -381,24 +403,25 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                     const isHalfHalf = watchedItems[index]?.isHalfHalf ?? false;
                     
                     return (
-                      <div key={field.id} className="flex flex-col gap-3 rounded-md border p-4">
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2">
-                          <div className="flex-1">
-                             <FormField control={form.control} name={`items.${index}.productId`} render={({ field }) => (
-                                <FormItem>
-                                    <Button variant="outline" type="button" className={cn("w-full justify-between", !field.value && "text-muted-foreground")} onClick={() => handleOpenDrawer(index)}>
-                                        {getProductDisplay(field.value)}
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                    <FormMessage className="pt-1"/>
-                                </FormItem>
-                            )}/>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="flex-1 sm:w-24"><FormControl><Input type="number" min="1" placeholder="Qtd." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <Button type="button" variant="destructive" size="icon" onClick={() => remove(index)} disabled={fields.length <= 1}><Trash2 className="h-4 w-4" /><span className="sr-only">Remover</span></Button>
-                          </div>
+                      <div key={field.id} className="flex flex-col gap-4 rounded-md border bg-card p-4">
+                        <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-medium pt-2">Item {index + 1}</h3>
+                            <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive -mr-2 -mt-2" onClick={() => remove(index)} disabled={fields.length <= 1}>
+                                <Trash2 className="h-4 w-4" /><span className="sr-only">Remover</span>
+                            </Button>
                         </div>
+
+                         <FormField control={form.control} name={`items.${index}.productId`} render={({ field: productField }) => (
+                            <FormItem>
+                                <ProductSelector
+                                    productId={productField.value}
+                                    productName={selectedProduct?.name}
+                                    onClick={() => handleOpenDrawer(index)}
+                                    placeholder="Adicionar Produto"
+                                />
+                                <FormMessage className="pt-1"/>
+                            </FormItem>
+                        )}/>
 
                         {isPizza && (
                            <FormField control={form.control} name={`items.${index}.isHalfHalf`} render={({ field }) => (
@@ -413,11 +436,12 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                         {isPizza && isHalfHalf && (
                             <FormField control={form.control} name={`items.${index}.product2Id`} render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>2º Sabor</FormLabel>
-                                    <Button variant="outline" type="button" className={cn("w-full justify-between", !field.value && "text-muted-foreground")} onClick={() => handleOpenDrawer(index, true)}>
-                                        {getProductDisplay(field.value)}
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
+                                     <ProductSelector
+                                        productId={field.value}
+                                        productName={allProducts.find(p => p.id === field.value)?.name}
+                                        onClick={() => handleOpenDrawer(index, true)}
+                                        placeholder="Adicionar 2º Sabor"
+                                    />
                                     <FormMessage className="pt-1"/>
                                 </FormItem>
                             )}/>
@@ -439,6 +463,10 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                               )}
                             />
                         )}
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                           <span className="text-sm text-muted-foreground">Quantidade:</span>
+                           <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => ( <FormItem className="w-20"><FormControl><Input type="number" min="1" {...field} /></FormControl></FormItem>)} />
+                        </div>
                       </div>
                     )
                   })}

@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing } from 'lucide-react';
+import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import {
@@ -59,6 +59,10 @@ import {
 import { EditUserDialog } from '@/components/app/edit-user-dialog';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFcm } from '@/hooks/useFcm';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { auth } from '@/lib/firebase-client';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+
 
 const settingsSchema = z.object({
   basePrices: z.object({
@@ -89,6 +93,91 @@ function getStatusBadgeClasses(status: UserStatus): string {
       return 'bg-secondary text-secondary-foreground';
   }
 }
+
+// Component for the reset app dialog
+const ResetAppDialog = ({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) => {
+    const { toast } = useToast();
+    const { getAuthToken } = useUser();
+    const [password, setPassword] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleReset = async () => {
+        setIsSubmitting(true);
+        const user = auth.currentUser;
+        if (!user || !user.email) {
+            toast({ variant: 'destructive', title: 'Erro de Autenticação', description: 'Usuário não encontrado.' });
+            setIsSubmitting(false);
+            return;
+        }
+
+        try {
+            // Step 1: Re-authenticate user to confirm their identity
+            const credential = EmailAuthProvider.credential(user.email, password);
+            await reauthenticateWithCredential(user, credential);
+
+            // Step 2: Call the backend API to perform the reset
+            const token = await getAuthToken();
+            const response = await fetch('/api/app-reset', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Falha ao resetar a aplicação.');
+
+            toast({ title: 'Sucesso!', description: 'O aplicativo foi resetado. Pedidos e notificações foram apagados.' });
+            onOpenChange(false);
+            // Optionally, trigger a refresh of context data or a page reload
+            window.location.reload();
+
+        } catch (error: any) {
+            let description = 'Ocorreu um erro desconhecido.';
+            if (error.code === 'auth/wrong-password') {
+                description = 'A senha informada está incorreta. Tente novamente.';
+            } else if (error.message) {
+                description = error.message;
+            }
+            toast({ variant: 'destructive', title: 'Erro na Operação', description });
+        } finally {
+            setIsSubmitting(false);
+            setPassword('');
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Você tem certeza absoluta?</DialogTitle>
+                    <DialogDescription>
+                        Esta ação é <span className="font-bold text-destructive">irreversível</span> e apagará permanentemente todos os pedidos e notificações. Clientes, produtos e usuários serão mantidos.
+                        Para confirmar, digite sua senha de login abaixo.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Input 
+                        type="password"
+                        placeholder="Digite sua senha"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={isSubmitting}
+                    />
+                </div>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSubmitting}>Cancelar</Button>
+                    <Button 
+                        variant="destructive" 
+                        onClick={handleReset} 
+                        disabled={isSubmitting || password.length < 6}
+                    >
+                        {isSubmitting ? "Resetando..." : "Resetar Aplicativo"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 
 // Componente para o card de notificações, para ser reutilizado
 const NotificationsCard = () => {
@@ -154,7 +243,7 @@ const AdminSettings = () => {
   const { currentUser, users, updateUserStatus, deleteUser, updateUserRole } = useUser();
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
-  const [viewingPasswordUser, setViewingPasswordUser] = useState<UserProfile | null>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const isMobile = useIsMobile();
   const { toast } = useToast();
 
@@ -255,6 +344,7 @@ const AdminSettings = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ResetAppDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen} />
       
       <Card className="shadow-lg">
         <CardHeader>
@@ -313,6 +403,29 @@ const AdminSettings = () => {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive shadow-lg">
+        <CardHeader>
+            <div className="flex items-center gap-4">
+                <AlertTriangle className="h-8 w-8 text-destructive" />
+                <div>
+                    <CardTitle>Zona de Perigo</CardTitle>
+                    <CardDescription>Ações destrutivas que devem ser usadas com cautela.</CardDescription>
+                </div>
+            </div>
+        </CardHeader>
+        <CardContent>
+            <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                <div>
+                    <h3 className="font-semibold">Resetar Dados do Aplicativo</h3>
+                    <p className="text-sm text-muted-foreground">Apaga permanentemente todos os pedidos e notificações. Esta ação não pode ser desfeita.</p>
+                </div>
+                <Button variant="destructive" onClick={() => setIsResetDialogOpen(true)}>
+                    Resetar App
+                </Button>
+            </div>
         </CardContent>
       </Card>
 

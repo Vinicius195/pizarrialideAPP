@@ -35,32 +35,30 @@ async function createNewOrderNotification(order: Order) {
       });
     });
 
-    // CORRECTED: Payload now includes a `data` field for robustness
-    const pushNotificationPayload: Message = {
-      notification: { title: notificationTitle, body: notificationBody },
-      webpush: {
-        fcmOptions: { link: relatedUrl },
-        notification: {
-          title: notificationTitle,
-          body: notificationBody,
-          icon: iconUrl,
-          vibrate: [200, 100, 200],
-          actions: [{ action: "open_url", title: "Ver Pedido" }]
-        }
-      },
-      // The `data` field is the most reliable way to send info to the service worker.
+    // **CORREÇÃO**: Removida a anotação de tipo `: Message`.
+    // O objeto completo será validado dentro da chamada `send()`.
+    const pushNotificationPayload = {
       data: {
         title: notificationTitle,
         body: notificationBody,
         icon: iconUrl,
-        url: relatedUrl
+        url: relatedUrl,
+        tag: `pedido-${order.id}`
       },
-      topic: '' 
+      webpush: {
+        headers: {
+          Urgency: 'high',
+          TTL: (60 * 60 * 24).toString(),
+        }
+      }
     };
 
     const pushPromises = usersToNotify
       .filter(user => user.fcmToken)
-      .map(user => messagingAdmin.send({ ...pushNotificationPayload, token: user.fcmToken! }));
+      .map(user => messagingAdmin.send({
+          ...pushNotificationPayload,
+          token: user.fcmToken!
+      }));
 
     await Promise.all([...firestorePromises, ...pushPromises]);
     console.log(`Successfully sent ${pushPromises.length} push notifications.`);

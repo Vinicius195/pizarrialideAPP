@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase-admin';
-import { sendNotification } from '@/lib/fcm'; // Importando a função de envio de notificação
+import { db, messagingAdmin } from '@/lib/firebase-admin'; // Importar o messagingAdmin
 import type { Order, UserProfile, UserRole } from '@/types';
+import { Message } from 'firebase-admin/messaging';
 
-// --- Helper para criar e enviar notificações ---
+// --- Helper REUTILIZÁVEL para criar e enviar notificações ---
 async function createAndSendOrderNotification(
     event: 'PEDIDO_EDITADO' | 'PEDIDO_PRONTO' | 'PEDIDO_CANCELADO' | 'PEDIDO_ENTREGUE',
     order: Order,
@@ -41,7 +41,6 @@ async function createAndSendOrderNotification(
 
         if (targetRoles.length === 0) return;
         
-        // Busca usuários que correspondem às roles e estão aprovados
         const userSnapshots = await Promise.all(
             targetRoles.map(role => 
                 db.collection('users').where('role', '==', role).where('status', '==', 'Aprovado').get()
@@ -59,32 +58,44 @@ async function createAndSendOrderNotification(
         
         if (usersToNotify.length === 0) return;
         
-        const processPromises: Promise<any>[] = [];
-
-        usersToNotify.forEach(user => {
-            // 1. Cria a notificação no banco de dados (como antes)
+        // --- LÓGICA DE ENVIO CORRIGIDA ---
+        const firestorePromises = usersToNotify.map(user => {
             const notificationRef = db.collection('notifications').doc();
-            processPromises.push(notificationRef.set({
+            return notificationRef.set({
                 userId: user.key,
-                message,
+                message: message, // Usar a mensagem específica do evento
                 relatedUrl: baseRelatedUrl,
                 isRead: false,
                 timestamp: new Date().toISOString(),
                 priority: (event === 'PEDIDO_PRONTO' || event === 'PEDIDO_EDITADO') ? 'high' : 'normal',
-            }));
-
-            // 2. Envia a notificação push se o usuário tiver um token FCM
-            if (user.fcmToken) {
-                const pushPayload = {
-                    title: notificationTitle,
-                    body: message,
-                    click_action: baseRelatedUrl,
-                };
-                processPromises.push(sendNotification(user.fcmToken, pushPayload));
-            }
+            });
         });
         
-        await Promise.all(processPromises);
+        const pushNotificationPayload = {
+            data: {
+              title: notificationTitle,
+              body: message,
+              icon: '/icons/icon-512x512.png',
+              url: baseRelatedUrl,
+              tag: `pedido-${order.id}-${event}` // Tag mais específica
+            },
+            webpush: {
+              headers: {
+                Urgency: 'high',
+                TTL: (60 * 60 * 24).toString(),
+              }
+            }
+        };
+
+        const pushPromises = usersToNotify
+            .filter(user => user.fcmToken)
+            .map(user => messagingAdmin.send({
+                ...pushNotificationPayload,
+                token: user.fcmToken!
+            }));
+        
+        await Promise.all([...firestorePromises, ...pushPromises]);
+        console.log(`Notificações para o evento ${event} enviadas com sucesso.`);
 
     } catch (error) {
         console.error(`Falha ao criar/enviar notificação para o evento ${event} no pedido ${order.id}:`, error);
@@ -116,13 +127,14 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     
     const updatedOrder = { ...previousOrder, ...orderUpdateData };
     
+    // Lógica para disparar notificações em mudanças de status ou itens
     if (orderUpdateData.status && orderUpdateData.status !== previousOrder.status) {
         switch (orderUpdateData.status) {
             case 'Pronto': await createAndSendOrderNotification('PEDIDO_PRONTO', updatedOrder); break;
             case 'Entregue': await createAndSendOrderNotification('PEDIDO_ENTREGUE', updatedOrder); break;
             case 'Cancelado': await createAndSendOrderNotification('PEDIDO_CANCELADO', updatedOrder); break;
         }
-    } else if (orderUpdateData.items) {
+    } else if (orderUpdateData.items && JSON.stringify(orderUpdateData.items) !== JSON.stringify(previousOrder.items)) {
         await createAndSendOrderNotification('PEDIDO_EDITADO', updatedOrder);
     }
 

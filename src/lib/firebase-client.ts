@@ -4,7 +4,7 @@ import {
   initializeAuth,
   indexedDBLocalPersistence,
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -21,5 +21,21 @@ const auth = initializeAuth(app, {
   persistence: indexedDBLocalPersistence,
 });
 const db = getFirestore(app);
+
+// **CORREÇÃO**: Habilita o cache offline do Firestore
+try {
+  enableIndexedDbPersistence(db)
+    .then(() => console.log("Persistência offline do Firestore ativada."))
+    .catch((err) => {
+      if (err.code == 'failed-precondition') {
+        console.warn("Múltiplas abas abertas, a persistência offline só será ativada em uma. Feche outras abas e recarregue.");
+      } else if (err.code == 'unimplemented') {
+        console.warn("O navegador atual não suporta persistência offline.");
+      }
+    });
+} catch (error) {
+    console.error("Erro ao tentar ativar a persistência offline:", error);
+}
+
 
 export { app, auth, db };

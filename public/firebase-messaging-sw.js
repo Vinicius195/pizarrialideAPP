@@ -2,6 +2,50 @@
 importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js');
 
+// --- Step 0: Force Service Worker Activation ---
+self.addEventListener('install', (event) => {
+  console.log('[SW] New Service Worker installing.');
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('[SW] New Service Worker activated.');
+  event.waitUntil(self.clients.claim());
+});
+
+// --- CORREÇÃO: Lógica para focar em janela existente ---
+self.addEventListener('fetch', (event) => {
+  // Esta lógica se aplica apenas a navegações, como abrir o PWA.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        try {
+          // Tenta encontrar uma janela do cliente já aberta.
+          const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          const appWindowClient = clientsArr.find(
+            (c) => c.url.startsWith(self.registration.scope) && 'focus' in c
+          );
+          
+          // Se uma janela for encontrada, foque nela.
+          if (appWindowClient) {
+            await appWindowClient.focus();
+            // Retorna um 'Response' vazio para indicar que a navegação foi tratada.
+            return new Response('', { status: 204, statusText: 'No Content' });
+          }
+          
+          // Se nenhuma janela for encontrada, continue com a navegação padrão.
+          return await fetch(event.request);
+        } catch (err) {
+          // Em caso de erro, recorra à navegação padrão.
+          console.error('[SW] Fetch handler failed:', err);
+          return await fetch(event.request);
+        }
+      })()
+    );
+  }
+});
+
+
 // --- Step 1: Get the Firebase configuration from the URL ---
 const urlParams = new URL(self.location).searchParams;
 const firebaseConfig = {
@@ -15,59 +59,63 @@ const firebaseConfig = {
 
 // --- Step 2: Initialize Firebase ---
 if (firebaseConfig.apiKey) {
-  firebase.initializeApp(firebaseConfig);
-  const messaging = firebase.messaging();
+  try {
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
 
-  // --- Step 3: Handle background messages ---
-  messaging.onBackgroundMessage((payload) => {
-    console.log('[firebase-messaging-sw.js] Received background message', payload);
+    // --- Step 3: Handle background messages ---
+    messaging.onBackgroundMessage((payload) => {
+      console.log('[SW] Background message received:', payload);
 
-    // ** ROBUST NOTIFICATION HANDLING **
-    // The most reliable way to get data is from the `data` field of the payload.
-    // The `notification` field is often handled automatically by the browser on some platforms
-    // and may not be available consistently in the background.
-    const notificationTitle = payload.data?.title || payload.notification?.title || 'Nova Notificação';
-    const notificationOptions = {
-      body: payload.data?.body || payload.notification?.body || 'Você tem uma nova mensagem.',
-      icon: payload.data?.icon || '/icons/icon-192x192.png',
-      // Add other options for better user experience
-      badge: '/icons/icon-192x192.png', // An icon for the notification bar
-      vibrate: [200, 100, 200], // Add vibration pattern
-      data: {
-        url: payload.data?.url || '/', // URL to open on click
-      },
-    };
+      const { title, body, icon, url, tag } = payload.data || {};
 
-    // The service worker must show a notification to the user.
-    self.registration.showNotification(notificationTitle, notificationOptions);
-  });
+      if (!title) {
+        console.error("[SW] No title found in message data. Can't show notification.");
+        return;
+      }
+      
+      const notificationTitle = title;
+      const notificationOptions = {
+        body: body || 'Você tem uma nova mensagem.',
+        icon: icon || '/icons/icon-512x512.png',
+        badge: '/icons/icon-192x192.png',
+        vibrate: [200, 100, 200],
+        tag: tag || 'pizzaria-notificacao',
+        actions: [ { action: 'open_url', title: 'Ver Detalhes' } ],
+        data: { url: url || '/' },
+      };
 
-  // --- Step 4: Handle notification click ---
-  self.addEventListener('notificationclick', (event) => {
-    // Close the notification
-    event.notification.close();
+      console.log(`[SW] Showing notification with title: "${notificationTitle}"`);
+      self.registration.showNotification(notificationTitle, notificationOptions);
+    });
 
-    const urlToOpen = event.notification.data?.url || '/';
+    // --- Step 4: Handle notification click ---
+    self.addEventListener('notificationclick', (event) => {
+      console.log('[SW] Notification clicked:', event);
+      const clickedNotification = event.notification;
+      clickedNotification.close();
 
-    // This looks for an existing window and focuses it.
-    // If no window is found, it opens a new one.
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        if (clientList.length > 0) {
-          let client = clientList[0];
-          for (const c of clientList) {
-            if (c.focused) {
-              client = c;
+      const urlToOpen = clickedNotification.data?.url || '/';
+
+      event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+          for (const client of clientList) {
+            if (client.url === urlToOpen && 'focus' in client) {
+              return client.focus();
             }
           }
-          return client.focus();
-        }
-        return clients.openWindow(urlToOpen);
-      })
-    );
-  });
+          if (clients.openWindow) {
+            return clients.openWindow(urlToOpen);
+          }
+        })
+      );
+    });
 
-  console.log('[firebase-messaging-sw.js] Firebase initialized and handlers set up.');
+    console.log('[SW] Firebase initialized and handlers set up.');
+
+  } catch (error) {
+    console.error('[SW] Error during Firebase initialization or setup:', error);
+  }
 } else {
-  console.error('[firebase-messaging-sw.js] Firebase config not found in URL. Initialization failed.');
+  console.error('[SW] Firebase config not found in URL. Initialization failed.');
 }

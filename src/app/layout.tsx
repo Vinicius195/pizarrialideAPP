@@ -5,7 +5,6 @@ import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { UserProvider } from '@/contexts/user-context';
 import { cn } from '@/lib/utils';
-import { ServiceWorkerRegistrar } from '@/components/service-worker-registrar';
 
 export const metadata: Metadata = {
   title: 'Lider Pizzaria',
@@ -45,7 +44,6 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="light">
           <UserProvider>
-            <ServiceWorkerRegistrar />
             {children}
             <Toaster />
           </UserProvider>

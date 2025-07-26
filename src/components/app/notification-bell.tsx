@@ -36,10 +36,6 @@ const playNotificationAlert = () => {
         
         oscillator.start(audioContext.currentTime);
         oscillator.stop(audioContext.currentTime + 0.5);
-
-        if ('vibrate' in navigator) {
-            navigator.vibrate([200, 100, 200]);
-        }
     } catch (e) {
         console.error("Failed to play notification sound.", e);
     }

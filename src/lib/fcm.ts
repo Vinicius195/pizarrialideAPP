@@ -23,19 +23,16 @@ export async function sendNotification(
     return;
   }
 
+  // **CORREÇÃO:** Mover de `notification` para `data`
+  // Para garantir que o Service Worker controle a notificação em todos os cenários
+  // (primeiro plano, segundo plano, app fechado), usamos um payload de "dados".
   const message = {
     token: token,
-    notification: {
+    data: {
       title: payload.title,
       body: payload.body,
-    },
-    webpush: {
-      notification: {
-        icon: payload.icon || '/icons/icon-192x192.png',
-      },
-      fcm_options: {
-        link: payload.click_action || '/', // Define o link a ser aberto
-      },
+      icon: payload.icon || '/icons/icon-192x192.png',
+      url: payload.click_action || '/', // O Service Worker usará este campo para o clique
     },
   };
 

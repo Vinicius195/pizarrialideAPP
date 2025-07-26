@@ -64,6 +64,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [rawOrders, setRawOrders] = useState<Order[]>([]);
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  // **CORREÇÃO**: Inicia o estado como `true` para dar tempo ao Firebase.
   const [isLoading, setIsLoading] = useState(true);
 
   const orderStatuses: OrderStatus[] = ['Recebido', 'Preparando', 'Pronto', 'Em Entrega', 'Entregue', 'Cancelado', 'Arquivado'];
@@ -109,7 +110,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setIsLoading(true);
+        // Não é mais necessário definir isLoading(true) aqui, pois já começa como true.
         try {
           const userProfile = await fetchAPI(`/api/users/${user.uid}`);
           if (!userProfile || userProfile.status !== 'Aprovado') {
@@ -117,7 +118,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           }
           setCurrentUser(userProfile);
 
-          // Listeners for general collections
+          // Listeners para coleções gerais
           const collections: { [key: string]: (data: any) => void } = {
             users: (data) => setRawUsers(data.map((u: any) => ({ ...u, key: u.id }))),
             customers: setRawCustomers,
@@ -131,7 +132,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             })
           );
 
-          // --- Special listener for orders to filter out archived ones and sort them ---
+          // Listener especial para pedidos
           const ordersQuery = query(
             collection(db, 'orders'), 
             where('status', '!=', 'Arquivado'),
@@ -145,7 +146,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             toast({
               variant: "destructive",
               title: "Erro ao carregar pedidos",
-              description: "Não foi possível carregar os pedidos. Verifique o console para mais detalhes. Pode ser necessário criar um índice no Firestore.",
+              description: "Não foi possível carregar os pedidos. Verifique o console para mais detalhes.",
             });
           });
           unsubscribes.push(ordersUnsubscribe);

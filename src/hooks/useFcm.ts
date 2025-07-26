@@ -48,7 +48,7 @@ export function useFcm() {
       toast({
         title: 'Permissão de Notificação Negada',
         description: 'Você não receberá notificações sobre seus pedidos.',
-        variant: 'default', // Corrigido de 'info' para 'default'
+        variant: 'default',
       });
     }
   };
@@ -56,6 +56,10 @@ export function useFcm() {
   // Configura o FCM, obtém e salva o token.
   const setupFcm = async (userId: string) => {
     try {
+      if (!('serviceWorker' in navigator)) {
+        throw new Error('Service Workers não são suportados neste navegador.');
+      }
+      
       const messaging = getMessaging(app);
       const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
 
@@ -63,21 +67,29 @@ export function useFcm() {
         throw new Error('Chave VAPID do Firebase não encontrada.');
       }
 
-      // Constrói a URL do Service Worker com as credenciais como parâmetros
       const swUrl = `/firebase-messaging-sw.js?apiKey=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}&authDomain=${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}&projectId=${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}&storageBucket=${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}&messagingSenderId=${process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}&appId=${process.env.NEXT_PUBLIC_FIREBASE_APP_ID}`;
-
-      const swRegistration = await navigator.serviceWorker.register(swUrl, {
+      
+      // **CORREÇÃO**: Força a atualização e ativação do Service Worker
+      const registration = await navigator.serviceWorker.register(swUrl, {
         scope: '/',
+        updateViaCache: 'none', // Busca sempre a versão mais recente
       });
+
+      // Se houver um novo SW esperando para ser ativado
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+      
+      // Garante que o SW esteja ativo antes de obter o token
+      await navigator.serviceWorker.ready;
 
       const token = await getToken(messaging, {
         vapidKey,
-        serviceWorkerRegistration: swRegistration,
+        serviceWorkerRegistration: registration,
       });
 
       if (token) {
         setFcmToken(token);
-        // Envia o token para ser salvo no backend
         await saveTokenToDb(userId, token);
         toast({
           title: 'Notificações Ativadas!',
@@ -123,8 +135,8 @@ export function useFcm() {
     const unsubscribe = onMessage(messaging, (payload) => {
       console.log('Mensagem recebida em primeiro plano: ', payload);
       toast({
-        title: payload.notification?.title || 'Nova Notificação',
-        description: payload.notification?.body,
+        title: payload.data?.title || 'Nova Notificação',
+        description: payload.data?.body,
       });
     });
 

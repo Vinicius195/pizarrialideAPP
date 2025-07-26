@@ -203,12 +203,14 @@ export function OrderDetailsDialog({ order, open, onOpenChange }: OrderDetailsDi
           {order.notes && (
             <>
               <Separator />
-              <div className="space-y-2">
-                 <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
                     <MessageSquare className="h-4 w-4" />
                     <span className="text-sm font-medium">Observações</span>
                 </div>
-                <p className="text-sm text-foreground/90 whitespace-pre-wrap pl-6">{order.notes}</p>
+                <div className="border bg-muted/30 rounded-lg p-3">
+                    <p className="text-sm text-foreground/90 whitespace-pre-wrap font-bold">{order.notes}</p>
+                </div>
               </div>
             </>
           )}

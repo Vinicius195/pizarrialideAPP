@@ -2,47 +2,99 @@
 importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js');
 
-// --- Step 0: Force Service Worker Activation ---
+const CACHE_NAME = 'pizzaria-app-cache-v1';
+const ASSETS_TO_CACHE = [
+  '/',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  '/manifest.webmanifest'
+];
+
+// --- Step 0: Force Service Worker Activation & Cache App Shell ---
 self.addEventListener('install', (event) => {
   console.log('[SW] New Service Worker installing.');
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Caching app shell');
+      return cache.addAll(ASSETS_TO_CACHE);
+    })
+  );
 });
 
 self.addEventListener('activate', (event) => {
   console.log('[SW] New Service Worker activated.');
-  event.waitUntil(self.clients.claim());
+  // Limpa caches antigos
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[SW] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+  return self.clients.claim();
 });
 
-// --- CORREÇÃO: Lógica para focar em janela existente ---
+// --- CORREÇÃO: Lógica para focar em janela existente e servir do cache ---
 self.addEventListener('fetch', (event) => {
-  // Esta lógica se aplica apenas a navegações, como abrir o PWA.
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      (async () => {
-        try {
-          // Tenta encontrar uma janela do cliente já aberta.
-          const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-          const appWindowClient = clientsArr.find(
-            (c) => c.url.startsWith(self.registration.scope) && 'focus' in c
-          );
-          
-          // Se uma janela for encontrada, foque nela.
-          if (appWindowClient) {
-            await appWindowClient.focus();
-            // Retorna um 'Response' vazio para indicar que a navegação foi tratada.
-            return new Response('', { status: 204, statusText: 'No Content' });
-          }
-          
-          // Se nenhuma janela for encontrada, continue com a navegação padrão.
-          return await fetch(event.request);
-        } catch (err) {
-          // Em caso de erro, recorra à navegação padrão.
-          console.error('[SW] Fetch handler failed:', err);
-          return await fetch(event.request);
-        }
-      })()
-    );
+  // Lógica para focar a janela existente do PWA
+  if (event.request.mode === 'navigate' && event.request.method === 'GET') {
+      event.respondWith(
+          (async () => {
+              const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+              const appWindowClient = clientsArr.find(
+                  (c) => c.url.startsWith(self.registration.scope) && 'focus' in c
+              );
+
+              if (appWindowClient) {
+                  await appWindowClient.focus();
+                  // Como a janela já está aberta, servimos a página principal do cache.
+                  const cachedResponse = await caches.match('/');
+                  if (cachedResponse) return cachedResponse;
+              }
+
+              // Se nenhuma janela for encontrada, ou o cache falhar, recorra à rede.
+              try {
+                  const networkResponse = await fetch(event.request);
+                  // Clona a resposta para poder colocar no cache e retornar ao mesmo tempo
+                  const responseToCache = networkResponse.clone();
+                  const cache = await caches.open(CACHE_NAME);
+                  // Cacheia a página principal para acesso offline
+                  if (event.request.url === self.registration.scope) {
+                    cache.put('/', responseToCache);
+                  }
+                  return networkResponse;
+              } catch (error) {
+                  console.error('[SW] Fetch failed; returning offline page from cache.');
+                  return await caches.match('/');
+              }
+          })()
+      );
+      return;
   }
+
+  // Estratégia Cache-First para outros recursos (imagens, etc.)
+  event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+          // Se o recurso estiver no cache, retorna ele
+          if (cachedResponse) {
+              return cachedResponse;
+          }
+          // Se não, busca na rede, clona, cacheia e retorna
+          return fetch(event.request).then((networkResponse) => {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                  cache.put(event.request, responseToCache);
+              });
+              return networkResponse;
+          });
+      })
+  );
 });
 
 
@@ -73,7 +125,7 @@ if (firebaseConfig.apiKey) {
         console.error("[SW] No title found in message data. Can't show notification.");
         return;
       }
-      
+
       const notificationTitle = title;
       const notificationOptions = {
         body: body || 'Você tem uma nova mensagem.',

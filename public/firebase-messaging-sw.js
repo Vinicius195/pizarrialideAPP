@@ -74,13 +74,13 @@ if (self.firebaseConfig) {
   console.error('[SW] Firebase config not found. Initialization failed.');
 }
 
-// --- Basic PWA Caching (Optional but recommended) ---
-const CACHE_NAME = 'pizzaria-app-cache-v1';
+// --- PWA Caching Logic ---
+const CACHE_NAME = 'pizzaria-app-cache-v2'; // Incremented cache name to force update
 const ASSETS_TO_CACHE = [
   '/',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
-  '/manifest.webmanifest' // Corrected name from your original file
+  '/manifest.webmanifest'
 ];
 
 self.addEventListener('install', (event) => {
@@ -112,10 +112,42 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    // Serve from cache first, then fall back to network
+    // --- Smart Cache Strategy ---
+
+    // 1. Ignore API calls and non-GET requests.
+    // Let the browser handle these requests as it normally would.
+    if (event.request.url.includes('/api/') || event.request.method !== 'GET') {
+        return;
+    }
+
+    // 2. Network First, then Cache for navigation requests (HTML pages).
+    // This ensures users get the latest version of the app's pages.
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request).catch(() => {
+                // If the network fails (offline), serve the base page from cache.
+                return caches.match('/');
+            })
+        );
+        return;
+    }
+
+    // 3. Cache First for static assets (CSS, JS, images).
+    // These assets are unlikely to change often, so serving from cache is fast.
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
-            return cachedResponse || fetch(event.request);
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+            // If the asset is not in the cache, fetch it from the network,
+            // then cache it for next time.
+            return fetch(event.request).then((networkResponse) => {
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, responseToCache);
+                });
+                return networkResponse;
+            });
         })
     );
 });

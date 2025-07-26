@@ -1,6 +1,7 @@
+
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export function GET() {
   const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,

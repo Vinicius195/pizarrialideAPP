@@ -55,7 +55,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-background p-4">
+    <div 
+      className="flex min-h-screen w-full items-center justify-center bg-background p-4"
+      suppressHydrationWarning // Adicionado para silenciar o aviso de hidratação causado por extensões do navegador.
+    >
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
             <Pizza className="mx-auto h-14 w-14 text-primary" />

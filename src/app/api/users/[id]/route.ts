@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase-admin';
+import { db, messagingAdmin } from '@/lib/firebase-admin'; // Importar messagingAdmin
 import admin from 'firebase-admin';
 import type { UserProfile, UserStatus } from '@/types';
 import { getAuth } from 'firebase-admin/auth';
@@ -13,20 +13,51 @@ async function notifyUserOfStatusChange(userId: string, newStatus: UserStatus) {
         } else if (newStatus === 'Reprovado') {
             message = 'Infelizmente sua conta não foi aprovada. Contate o suporte para mais detalhes.';
         } else {
-            return; // Don't notify for 'Pendente' or other statuses
+            return; // Não notificar para 'Pendente' ou outros status
         }
 
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) return;
+        const user = userDoc.data() as UserProfile;
+
+        // 1. Criar notificação interna (sininho)
         const notificationRef = db.collection('notifications').doc();
-        await notificationRef.set({
+        const internalNotificationPromise = notificationRef.set({
             userId,
             message,
-            relatedUrl: '/dashboard', // A neutral landing page
+            relatedUrl: '/dashboard', // Uma página de destino neutra
             isRead: false,
             timestamp: new Date().toISOString(),
             priority: 'high'
         });
+
+        // 2. Enviar notificação push se houver token
+        let pushPromise: Promise<any> | null = null;
+        if (user.fcmToken) {
+            const pushPayload = {
+                token: user.fcmToken,
+                notification: {
+                    title: 'Atualização de Conta',
+                    body: message,
+                    icon: '/icons/icon-192x192.png',
+                },
+                data: {
+                    url: '/dashboard',
+                    tag: `status-change-${userId}`
+                },
+                webpush: {
+                    fcm_options: { link: '/dashboard' },
+                    headers: { Urgency: 'high', TTL: (60 * 60 * 24).toString() }
+                }
+            };
+            pushPromise = messagingAdmin.send(pushPayload);
+        }
+
+        await Promise.all([internalNotificationPromise, pushPromise].filter(Boolean));
+        console.log(`Notificações de mudança de status (internas e push) enviadas para o usuário ${userId}.`);
+
     } catch (error) {
-        console.error(`Failed to create status change notification for user ${userId}:`, error);
+        console.error(`Falha ao criar/enviar notificação de mudança de status para o usuário ${userId}:`, error);
     }
 }
 

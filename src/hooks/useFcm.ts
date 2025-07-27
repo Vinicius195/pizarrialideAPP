@@ -20,7 +20,6 @@ export function useFcm() {
   const saveTokenToDb = useCallback(async (userId: string, token: string) => {
     try {
       const storedToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
-      // **MELHORIA**: Só salva o token no DB se for um token novo para este dispositivo.
       if (storedToken === token) {
         console.log('[FCM] Token já está sincronizado.');
         return;
@@ -49,16 +48,11 @@ export function useFcm() {
       const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
       if (!vapidKey) throw new Error('Chave VAPID do Firebase não encontrada.');
 
-      const swUrl = `/firebase-messaging-sw.js?apiKey=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}&authDomain=${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}&projectId=${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}&storageBucket=${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}&messagingSenderId=${process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}&appId=${process.env.NEXT_PUBLIC_FIREBASE_APP_ID}`;
-      
-      const registration = await navigator.serviceWorker.register(swUrl, {
+      // CORREÇÃO: Registrar o Service Worker da forma limpa, sem parâmetros na URL.
+      // O Service Worker agora busca sua própria configuração via `importScripts`.
+      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
         scope: '/',
-        updateViaCache: 'none',
       });
-
-      if (registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      }
       
       await navigator.serviceWorker.ready;
 

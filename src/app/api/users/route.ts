@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db, authAdmin } from '@/lib/firebase-admin';
+import { db, authAdmin, messagingAdmin } from '@/lib/firebase-admin'; // Importar messagingAdmin
 import type { UserProfile } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
@@ -17,8 +17,14 @@ async function notifyAdminsOfNewUser(newUser: UserProfile) {
         const relatedUrl = '/configuracoes?tab=users';
         const batch = db.batch();
 
+        // Array para coletar promessas de push notifications
+        const pushPromises: Promise<any>[] = [];
+
         adminsSnapshot.docs.forEach(doc => {
+            const admin = doc.data() as UserProfile;
             const adminId = doc.id;
+
+            // 1. Criar notificação interna (sininho)
             const newNotificationRef = db.collection('notifications').doc();
             batch.set(newNotificationRef, {
                 userId: adminId,
@@ -28,11 +34,35 @@ async function notifyAdminsOfNewUser(newUser: UserProfile) {
                 isRead: false,
                 timestamp: Timestamp.now(),
             });
+
+            // 2. Preparar e enviar notificação push se houver token
+            if (admin.fcmToken) {
+                const pushPayload = {
+                    token: admin.fcmToken,
+                    notification: {
+                        title: 'Novo Usuário Registrado',
+                        body: message,
+                        icon: '/icons/icon-192x192.png',
+                    },
+                    data: {
+                        url: relatedUrl,
+                        tag: `new-user-${newUser.key}`
+                    },
+                    webpush: {
+                        fcm_options: { link: relatedUrl },
+                        headers: { Urgency: 'normal', TTL: (60 * 60 * 24).toString() }
+                    }
+                };
+                pushPromises.push(messagingAdmin.send(pushPayload));
+            }
         });
         
-        await batch.commit();
+        // Executar todas as operações em paralelo
+        await Promise.all([batch.commit(), ...pushPromises]);
+        console.log("Notificações de novo usuário (internas e push) enviadas.");
+
     } catch (error) {
-        console.error("Failed to create 'new user' notifications:", error);
+        console.error("Falha ao criar/enviar notificações de 'novo usuário':", error);
     }
 }
 

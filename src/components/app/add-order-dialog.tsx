@@ -142,8 +142,25 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
   const isManager = currentUser?.role === 'Administrador';
   const isEditMode = !!order;
 
+  // CORREÇÃO: Schema dinâmico para validação de tamanho
+  const dynamicAddOrderSchema = useMemo(() => {
+    return addOrderSchema.superRefine((data, ctx) => {
+        data.items.forEach((item, index) => {
+            const product = allProducts.find(p => p.id === item.productId);
+            // Se o produto existe, tem tamanhos, mas nenhum tamanho foi selecionado -> adicione um erro.
+            if (product && product.sizes && Object.keys(product.sizes).length > 0 && !item.size) {
+                 ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "Por favor, selecione um tamanho.",
+                    path: [`items`, index, "size"],
+                });
+            }
+        });
+    });
+  }, [allProducts]);
+
   const form = useForm<AddOrderFormValues>({
-    resolver: zodResolver(addOrderSchema),
+    resolver: zodResolver(dynamicAddOrderSchema), // Usar o schema dinâmico
     defaultValues: {
       customerName: '', customerPhone: '', orderType: 'retirada',
       items: [{ productId: '', isHalfHalf: false, quantity: 1 }],
@@ -280,7 +297,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
       setValue(`items.${itemIndex}.product2Id`, productId, { shouldValidate: true });
     } else {
       setValue(`items.${itemIndex}.productId`, productId, { shouldValidate: true });
-      setValue(`items.${itemIndex}.size`, undefined); 
+      setValue(`items.${itemIndex}.size`, undefined, { shouldValidate: true });
       setValue(`items.${itemIndex}.isHalfHalf`, false);
       setValue(`items.${itemIndex}.product2Id`, undefined);
     }
@@ -452,7 +469,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                 <FormItem className="pt-2">
                                     <FormLabel className="text-sm">Tamanho</FormLabel>
                                     <FormControl>
-                                      <RadioGroup onValueChange={field.onChange} value={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
+                                      <RadioGroup onValueChange={(value) => { field.onChange(value); trigger(`items.${index}.size`); }} value={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
                                          {Object.keys(selectedProduct.sizes || {})
                                             .filter(size => selectedProduct.category !== 'Pizza' || getMockSettings().sizeAvailability[size as PizzaSize])
                                             .map((size) => (<FormItem key={size} className="flex items-center space-x-2 space-y-0"><FormControl><RadioGroupItem value={size} /></FormControl><FormLabel className="font-normal capitalize cursor-pointer">{size}</FormLabel></FormItem>))}

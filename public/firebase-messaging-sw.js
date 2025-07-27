@@ -52,7 +52,7 @@ if (self.firebaseConfig) {
 }
 
 // --- PWA Caching Logic ---
-const CACHE_NAME = 'pizzaria-app-cache-v5'; // Incremented version to apply changes
+const CACHE_NAME = 'pizzaria-app-cache-v6'; // Incremented version to apply changes
 const ASSETS_TO_CACHE = [
   '/',
   '/icons/icon-192x192.png',
@@ -93,9 +93,13 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Rule 2: Ignore all requests to Firebase and your own API to prevent caching issues.
-    // This is crucial for real-time updates and authentication.
-    if (request.url.includes('firestore.googleapis.com') || request.url.includes('/api/')) {
+    // Rule 2: Ignore all requests to Firebase, your own API, and the Firebase config script.
+    // This is crucial for real-time updates, authentication and configuration.
+    if (
+      request.url.includes('firestore.googleapis.com') ||
+      request.url.includes('/api/') ||
+      request.url.includes('/firebase-config.js')
+    ) {
         return; // Let the network handle it without interception.
     }
 
@@ -123,7 +127,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // Strategy for static assets (images, fonts): Cache First, then Network
-    // This provides a fast loading experience for non-critical assets.
+    // This provides a fast loading experience for non-critical-assets.
     event.respondWith(
         caches.match(request).then(cachedResponse => {
             return cachedResponse || fetch(request).then(networkResponse => {

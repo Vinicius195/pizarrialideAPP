@@ -1,4 +1,3 @@
-
 // Step 0: Import necessary scripts
 importScripts('https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.15.0/firebase-messaging-compat.js');
@@ -53,7 +52,7 @@ if (self.firebaseConfig) {
 }
 
 // --- PWA Caching Logic ---
-const CACHE_NAME = 'pizzaria-app-cache-v4'; // Incremented version to fix chrome-extension error
+const CACHE_NAME = 'pizzaria-app-cache-v5'; // Incremented version to apply changes
 const ASSETS_TO_CACHE = [
   '/',
   '/icons/icon-192x192.png',
@@ -89,17 +88,24 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const { request } = event;
 
-    // CORREÇÃO: Ignorar requisições de extensões ou outros esquemas não-http.
+    // Rule 1: Ignore non-HTTP/HTTPS requests (e.g., chrome-extension://)
     if (!request.url.startsWith('http')) {
         return;
     }
 
-    // 2. Ignorar chamadas de API e tráfego do Firebase
-    if (request.method !== 'GET' || request.url.includes('/api/') || request.url.includes('firestore.googleapis.com')) {
-        return; 
+    // Rule 2: Ignore all requests to Firebase and your own API to prevent caching issues.
+    // This is crucial for real-time updates and authentication.
+    if (request.url.includes('firestore.googleapis.com') || request.url.includes('/api/')) {
+        return; // Let the network handle it without interception.
     }
 
-    // 3. Estratégia "Network First" para páginas e scripts da aplicação
+    // Rule 3: Ignore all non-GET requests. Caching only applies to GET.
+    if (request.method !== 'GET') {
+        return;
+    }
+
+    // Strategy for app navigation and core assets (JS/CSS): Network First, then Cache
+    // This ensures users get the latest version of the app, falling back to cache if offline.
     if (request.mode === 'navigate' || request.destination === 'script' || request.destination === 'style') {
         event.respondWith(
             fetch(request)
@@ -108,12 +114,16 @@ self.addEventListener('fetch', (event) => {
                     caches.open(CACHE_NAME).then(cache => cache.put(request, responseToCache));
                     return networkResponse;
                 })
-                .catch(() => caches.match(request))
+                .catch(() => caches.match(request).then(cachedResponse => {
+                    // Return the cached response if the network fails
+                    return cachedResponse || Response.error();
+                }))
         );
         return;
     }
 
-    // 4. Estratégia "Cache First" para assets estáticos
+    // Strategy for static assets (images, fonts): Cache First, then Network
+    // This provides a fast loading experience for non-critical assets.
     event.respondWith(
         caches.match(request).then(cachedResponse => {
             return cachedResponse || fetch(request).then(networkResponse => {

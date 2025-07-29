@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing, AlertTriangle } from 'lucide-react';
+import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing, AlertTriangle, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import {
@@ -62,6 +62,7 @@ import { useFcm } from '@/hooks/useFcm';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { auth } from '@/lib/firebase-client';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { fontHeadline } from '@/lib/fonts'; // Corrected import path
 
 
 const settingsSchema = z.object({
@@ -206,35 +207,106 @@ const NotificationsCard = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {notificationPermission === 'loading' ? (
-          <p className="text-muted-foreground">Verificando permissões...</p>
-        ) : (
-          <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
-            <div className="space-y-1">
-              <h3 className="font-semibold">Status da Permissão</h3>
-              <p className={cn(
-                  "text-sm",
-                  notificationPermission === 'granted' && "text-green-600",
-                  notificationPermission === 'denied' && "text-red-600",
-                  notificationPermission === 'default' && "text-amber-600",
-              )}>
-                {notificationPermission === 'granted' && 'Notificações ativadas neste navegador.'}
-                {notificationPermission === 'denied' && 'Permissão bloqueada. Altere nas configurações do navegador.'}
-                {notificationPermission === 'default' && 'Permissão necessária para enviar notificações.'}
-              </p>
-            </div>
-            <Button
-              onClick={handleEnableNotifications}
-              disabled={notificationPermission === 'granted' || notificationPermission === 'denied'}
-            >
-              <BellRing className="mr-2 h-4 w-4" />
-              Ativar Notificações
-            </Button>
+        <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
+          <div className="space-y-1">
+            <h3 className="font-semibold">Status da Permissão</h3>
+            <p className={cn(
+                "text-sm",
+                notificationPermission === 'granted' && "text-green-600",
+                notificationPermission === 'denied' && "text-red-600",
+                notificationPermission === 'default' && "text-amber-600",
+            )}>
+              {notificationPermission === 'loading' && 'Verificando permissões...'}
+              {notificationPermission === 'granted' && 'Notificações ativadas neste navegador.'}
+              {notificationPermission === 'denied' && 'Permissão bloqueada. Altere nas configurações do navegador.'}
+              {notificationPermission === 'default' && 'Permissão necessária para enviar notificações.'}
+            </p>
           </div>
-        )}
+          <Button
+            onClick={handleEnableNotifications}
+            disabled={notificationPermission !== 'default'}
+          >
+            <BellRing className="mr-2 h-4 w-4" />
+            {notificationPermission === 'granted' ? 'Permissão Concedida' : 'Ativar Notificações'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
+};
+
+// Card para testar o envio de notificações
+const TestNotificationCard = () => {
+    const { getAuthToken } = useUser();
+    const { toast } = useToast();
+    const { notificationPermission } = useFcm();
+    const [isSending, setIsSending] = useState(false);
+
+    const handleTestNotification = async () => {
+        setIsSending(true);
+        try {
+            const token = await getAuthToken();
+            if (!token) {
+                toast({ variant: 'destructive', title: 'Erro de autenticação' });
+                return;
+            }
+
+            const response = await fetch('/api/test-notification', {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                toast({
+                    title: 'Notificação Enviada!',
+                    description: 'Coloque o app em 2º plano para vê-la. A entrega pode levar alguns segundos.',
+                });
+            } else {
+                throw new Error(result.error || 'Falha ao enviar notificação.');
+            }
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Erro ao Enviar Notificação',
+                description: error.message,
+            });
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    const isTestDisabled = notificationPermission !== 'granted' || isSending;
+
+    return (
+        <Card className="shadow-lg">
+            <CardHeader>
+                <CardTitle>Teste de Notificações</CardTitle>
+                <CardDescription>
+                    Use este botão para enviar uma notificação de teste para você mesmo.
+                    Certifique-se de que as notificações estejam ativadas acima.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
+                    <div className="space-y-1">
+                        <h3 className="font-semibold">Enviar um Teste</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {notificationPermission !== 'granted' 
+                            ? "Ative as notificações para poder testar."
+                            : "Clique para confirmar que o sistema está funcionando."
+                          }
+                        </p>
+                    </div>
+                    <Button onClick={handleTestNotification} disabled={isTestDisabled}>
+                        <Send className="mr-2 h-4 w-4" />
+                        {isSending ? 'Enviando...' : 'Enviar Teste'}
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+    );
 };
 
 
@@ -460,8 +532,8 @@ const AdminSettings = () => {
                 {pizzaSizes.map((size) => (
                   <FormField key={size} control={form.control} name={`sizeAvailability.${size}`} render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm h-full">
-                      <div className="space-y-0.5"><FormLabel className="text-base font-semibold capitalize cursor-pointer">{size}</FormLabel></div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} aria-label={`Disponibilidade do tamanho ${size}`} /></FormControl>
+                      <div className="space-y-0.5"><FormLabel htmlFor={`switch-${size}`} className="text-base font-semibold capitalize cursor-pointer">{size}</FormLabel></div>
+                      <FormControl><Switch id={`switch-${size}`} checked={field.value} onCheckedChange={field.onChange} aria-label={`Disponibilidade do tamanho ${size}`} /></FormControl>
                     </FormItem>
                   )} />
                 ))}
@@ -485,7 +557,7 @@ export default function ConfiguracoesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold font-headline">Configurações</h1>
+        <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Configurações</h1>
         <p className="text-muted-foreground">
           {isAdmin 
             ? "Gerencie as configurações gerais, usuários e notificações da sua pizzaria."
@@ -494,6 +566,8 @@ export default function ConfiguracoesPage() {
       </div>
 
       <NotificationsCard />
+
+      <TestNotificationCard />
 
       {isAdmin && <AdminSettings />}
 

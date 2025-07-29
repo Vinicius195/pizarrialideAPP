@@ -8,6 +8,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FileWarning } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { fontHeadline } from '@/lib/fonts'; // Corrected import path
 
 interface WeeklyRevenueData {
     date: string;
@@ -69,7 +71,7 @@ export default function RelatoriosPage() {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-3xl font-bold font-headline">Relatórios Gerenciais</h1>
+                <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Relatórios Gerenciais</h1>
                 <p className="text-muted-foreground">Análises detalhadas de vendas e performance.</p>
             </div>
 

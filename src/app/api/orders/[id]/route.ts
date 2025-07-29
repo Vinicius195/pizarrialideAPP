@@ -1,105 +1,104 @@
 import { NextResponse } from 'next/server';
-import { db, messagingAdmin } from '@/lib/firebase-admin'; // Importar o messagingAdmin
-import type { Order, UserProfile, UserRole } from '@/types';
-import { Message } from 'firebase-admin/messaging';
+import { db } from '@/lib/firebase-admin';
+import { sendNotification } from '@/lib/fcm';
+import type { Order, UserProfile, UserRole, Notification } from '@/types';
 
-// --- Helper REUTILIZÁVEL para criar e enviar notificações ---
-async function createAndSendOrderNotification(
-    event: 'PEDIDO_EDITADO' | 'PEDIDO_PRONTO' | 'PEDIDO_CANCELADO' | 'PEDIDO_ENTREGUE',
-    order: Order,
-) {
-    try {
-        let message = '';
-        let targetRoles: UserRole[] = [];
-        let baseRelatedUrl = '/pedidos';
-        let notificationTitle = 'Atualização do Pedido';
+/**
+ * Envia notificações com base na atualização de um pedido.
+ * Centraliza a lógica para diferentes eventos (status alterado, itens editados).
+ * @param previousOrder O estado do pedido antes da atualização.
+ * @param updatedOrder O estado do pedido após a atualização.
+ */
+async function notifyOrderUpdate(previousOrder: Order, updatedOrder: Order) {
+  let eventType: 'PEDIDO_EDITADO' | 'PEDIDO_PRONTO' | 'PEDIDO_CANCELADO' | 'PEDIDO_ENTREGUE' | null = null;
 
-        switch (event) {
-            case 'PEDIDO_EDITADO':
-                targetRoles = ['Administrador', 'Funcionário'];
-                notificationTitle = 'Pedido Modificado';
-                message = `✏️ O pedido #${order.orderNumber} foi alterado.`;
-                baseRelatedUrl = `/pedidos?open=${order.id}`;
-                break;
-            case 'PEDIDO_PRONTO':
-                targetRoles = ['Administrador', 'Funcionário'];
-                notificationTitle = 'Pedido Pronto!';
-                const deliveryType = order.orderType === 'entrega' ? 'para ENTREGA' : 'para RETIRADA';
-                message = `✅ Pedido #${order.orderNumber} está PRONTO ${deliveryType}!`;
-                break;
-            case 'PEDIDO_CANCELADO':
-                targetRoles = ['Administrador', 'Funcionário'];
-                notificationTitle = 'Pedido Cancelado';
-                message = `❌ O pedido #${order.orderNumber} foi cancelado.`;
-                break;
-            case 'PEDIDO_ENTREGUE':
-                targetRoles = ['Administrador'];
-                notificationTitle = 'Pedido Entregue';
-                message = `🎉 Pedido #${order.orderNumber} foi marcado como ENTREGUE.`;
-                break;
-        }
-
-        if (targetRoles.length === 0) return;
-        
-        const userSnapshots = await Promise.all(
-            targetRoles.map(role => 
-                db.collection('users').where('role', '==', role).where('status', '==', 'Aprovado').get()
-            )
-        );
-
-        const usersToNotify: UserProfile[] = [];
-        const userIds = new Set<string>();
-        userSnapshots.forEach(snapshot => snapshot.forEach(doc => {
-            if (!userIds.has(doc.id)) {
-                userIds.add(doc.id);
-                usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile);
-            }
-        }));
-        
-        if (usersToNotify.length === 0) return;
-        
-        // --- LÓGICA DE ENVIO CORRIGIDA ---
-        const firestorePromises = usersToNotify.map(user => {
-            const notificationRef = db.collection('notifications').doc();
-            return notificationRef.set({
-                userId: user.key,
-                message: message, // Usar a mensagem específica do evento
-                relatedUrl: baseRelatedUrl,
-                isRead: false,
-                timestamp: new Date().toISOString(),
-                priority: (event === 'PEDIDO_PRONTO' || event === 'PEDIDO_EDITADO') ? 'high' : 'normal',
-            });
-        });
-        
-        const pushNotificationPayload = {
-            data: {
-              title: notificationTitle,
-              body: message,
-              icon: '/icons/icon-512x512.png',
-              url: baseRelatedUrl,
-              tag: `pedido-${order.id}-${event}` // Tag mais específica
-            },
-            webpush: {
-              headers: {
-                Urgency: 'high',
-                TTL: (60 * 60 * 24).toString(),
-              }
-            }
-        };
-
-        const pushPromises = usersToNotify
-            .filter(user => user.fcmToken)
-            .map(user => messagingAdmin.send({
-                ...pushNotificationPayload,
-                token: user.fcmToken!
-            }));
-        
-        await Promise.all([...firestorePromises, ...pushPromises]);
-        console.log(`Notificações para o evento ${event} enviadas com sucesso.`);
-
-    } catch (error) {
-        console.error(`Falha ao criar/enviar notificação para o evento ${event} no pedido ${order.id}:`, error);
+  // Determina o tipo de evento com base na mudança
+  if (updatedOrder.status !== previousOrder.status) {
+    switch (updatedOrder.status) {
+      case 'Pronto': eventType = 'PEDIDO_PRONTO'; break;
+      case 'Entregue': eventType = 'PEDIDO_ENTREGUE'; break;
+      case 'Cancelado': eventType = 'PEDIDO_CANCELADO'; break;
     }
+  } else if (JSON.stringify(updatedOrder.items) !== JSON.stringify(previousOrder.items)) {
+    eventType = 'PEDIDO_EDITADO';
+  }
+
+  if (!eventType) return; // Nenhuma notificação necessária
+
+  // Define os parâmetros da notificação com base no evento
+  let title = '', body = '', url = '/pedidos', priority: Notification['priority'] = 'normal';
+  let targetRoles: UserRole[] = [];
+
+  switch (eventType) {
+    case 'PEDIDO_EDITADO':
+      title = `✏️ Pedido #${updatedOrder.orderNumber} Modificado`;
+      body = 'Os itens ou detalhes foram alterados. Confira as mudanças.';
+      url = `/pedidos?open=${updatedOrder.id}`;
+      priority = 'high';
+      targetRoles = ['Administrador', 'Funcionário'];
+      break;
+    case 'PEDIDO_PRONTO':
+      title = `✅ Pedido #${updatedOrder.orderNumber} Pronto!`;
+      body = `Aguardando para ${updatedOrder.orderType === 'entrega' ? 'entrega' : 'retirada'}.`;
+      priority = 'high';
+      targetRoles = ['Administrador', 'Funcionário'];
+      break;
+    case 'PEDIDO_CANCELADO':
+      title = `❌ Pedido #${updatedOrder.orderNumber} Cancelado`;
+      body = 'O pedido foi marcado como cancelado.';
+      priority = 'normal';
+      targetRoles = ['Administrador', 'Funcionário'];
+      break;
+    case 'PEDIDO_ENTREGUE':
+      title = `🎉 Pedido #${updatedOrder.orderNumber} Entregue!`;
+      body = 'O ciclo do pedido foi finalizado com sucesso.';
+      url = '/relatorios';
+      priority = 'normal';
+      targetRoles = ['Administrador']; // Apenas Admins são notificados
+      break;
+  }
+
+  try {
+    const userSnapshots = await Promise.all(
+      targetRoles.map(role => db.collection('users').where('role', '==', role).where('status', '==', 'Aprovado').get())
+    );
+
+    const usersToNotify: UserProfile[] = [];
+    const userIds = new Set<string>();
+    userSnapshots.forEach(snapshot => snapshot.forEach(doc => {
+      if (!userIds.has(doc.id)) {
+        userIds.add(doc.id);
+        usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile);
+      }
+    }));
+
+    if (usersToNotify.length === 0) return;
+
+    // 1. Salvar no Firestore
+    const firestorePromises = usersToNotify.map(user => {
+      const notificationRef = db.collection('notifications').doc();
+      const notificationData: Omit<Notification, 'id'> = {
+        userId: user.key,
+        title,
+        message: body,
+        relatedUrl: url,
+        read: false,
+        timestamp: new Date().toISOString(),
+        priority,
+      };
+      return notificationRef.set(notificationData);
+    });
+
+    // 2. Enviar Notificações Push
+    const pushPromises = usersToNotify
+      .filter(user => user.fcmToken)
+      .map(user => sendNotification(user.fcmToken!, { title, body, click_action: url }));
+
+    await Promise.all([...firestorePromises, ...pushPromises]);
+    console.log(`[API/Orders] Notificações para o evento ${eventType} enviadas para ${usersToNotify.length} usuários.`);
+  } catch (error) {
+    console.error(`[API/Orders] Falha ao enviar notificação para o evento ${eventType} no pedido ${updatedOrder.id}:`, error);
+  }
 }
 
 // GET a single order by ID
@@ -127,16 +126,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     
     const updatedOrder = { ...previousOrder, ...orderUpdateData };
     
-    // Lógica para disparar notificações em mudanças de status ou itens
-    if (orderUpdateData.status && orderUpdateData.status !== previousOrder.status) {
-        switch (orderUpdateData.status) {
-            case 'Pronto': await createAndSendOrderNotification('PEDIDO_PRONTO', updatedOrder); break;
-            case 'Entregue': await createAndSendOrderNotification('PEDIDO_ENTREGUE', updatedOrder); break;
-            case 'Cancelado': await createAndSendOrderNotification('PEDIDO_CANCELADO', updatedOrder); break;
-        }
-    } else if (orderUpdateData.items && JSON.stringify(orderUpdateData.items) !== JSON.stringify(previousOrder.items)) {
-        await createAndSendOrderNotification('PEDIDO_EDITADO', updatedOrder);
-    }
+    // Chamar a função de notificação centralizada
+    await notifyOrderUpdate(previousOrder, updatedOrder);
 
     return NextResponse.json(updatedOrder);
   } catch (error) {

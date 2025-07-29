@@ -39,16 +39,18 @@ async function notifyUserOfStatusChange(userId: string, newStatus: UserStatus) {
                 notification: {
                     title: 'Atualização de Conta',
                     body: message,
+                },
+                webpush: {
+                  notification: {
                     icon: '/icons/icon-192x192.png',
+                  },
+                  fcm_options: { link: '/dashboard' },
+                  headers: { Urgency: 'high', TTL: (60 * 60 * 24).toString() }
                 },
                 data: {
                     url: '/dashboard',
                     tag: `status-change-${userId}`
                 },
-                webpush: {
-                    fcm_options: { link: '/dashboard' },
-                    headers: { Urgency: 'high', TTL: (60 * 60 * 24).toString() }
-                }
             };
             pushPromise = messagingAdmin.send(pushPayload);
         }
@@ -81,7 +83,7 @@ async function getRequestingUserId(request: Request): Promise<string | null> {
 // GET a single user profile by ID (UID), and create it if it doesn't exist.
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
-    const userId = params.id;
+    const { id: userId } = await params;
     const userDocRef = db.collection('users').doc(userId);
     const userDoc = await userDocRef.get();
 
@@ -115,6 +117,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
 // PUT (update) a user profile by ID (UID)
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
+    const { id: userIdToUpdate } = await params;
     const requestingUid = await getRequestingUserId(request);
     if (!requestingUid) {
         return new NextResponse('Unauthorized: Invalid or missing token.', { status: 401 });
@@ -126,7 +129,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         return new NextResponse('Forbidden: You do not have permission to perform this action.', { status: 403 });
     }
 
-    const userIdToUpdate = params.id;
     if (requestingUid === userIdToUpdate) {
         return new NextResponse('Forbidden: Administrators cannot change their own role or status.', { status: 403 });
     }
@@ -153,8 +155,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     return NextResponse.json({ message: 'User profile updated successfully' });
 
-  } catch (error) {
-    console.error(`Error updating user profile ${params.id}:`, error);
+  } catch (error: any) {
+    const { id: userIdToUpdate } = await params;
+    console.error(`Error updating user profile ${userIdToUpdate}:`, error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
@@ -162,6 +165,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 // DELETE a user by ID (UID)
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
     try {
+        const { id: userIdToDelete } = await params;
         const requestingUid = await getRequestingUserId(request);
         if (!requestingUid) return new NextResponse('Unauthorized: Invalid or missing token.', { status: 401 });
 
@@ -171,7 +175,6 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
         if (!requesterProfile || requesterProfile.role !== 'Administrador') {
             return new NextResponse('Forbidden: You do not have permission to delete users.', { status: 403 });
         }
-        const userIdToDelete = params.id;
         if(requestingUid === userIdToDelete){
             return new NextResponse('Forbidden: Administrators cannot delete their own account.', { status: 403 });
         }

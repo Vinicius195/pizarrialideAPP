@@ -1,70 +1,71 @@
 import { NextResponse } from 'next/server';
-import { db, messagingAdmin } from '@/lib/firebase-admin';
-import type { Order, UserProfile, OrderItem } from '@/types';
-import { Message } from 'firebase-admin/messaging';
+import { db } from '@/lib/firebase-admin';
+import { sendNotification } from '@/lib/fcm';
+import type { Order, UserProfile, Notification } from '@/types';
 
-// --- Reusable Notification Function (Now with Push Notifications) ---
-async function createNewOrderNotification(order: Order) {
+/**
+ * Notifica usuários relevantes sobre a criação de um novo pedido.
+ * @param order O objeto do novo pedido.
+ */
+async function notifyNewOrder(order: Order) {
   try {
     const adminSnapshot = await db.collection('users').where('role', '==', 'Administrador').where('status', '==', 'Aprovado').get();
     const staffSnapshot = await db.collection('users').where('role', '==', 'Funcionário').where('status', '==', 'Aprovado').get();
 
     const usersToNotify: UserProfile[] = [];
     const userIds = new Set<string>();
-    adminSnapshot.forEach(doc => { if (!userIds.has(doc.id)) { userIds.add(doc.id); usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile); } });
-    staffSnapshot.forEach(doc => { if (!userIds.has(doc.id)) { userIds.add(doc.id); usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile); } });
 
-    if (usersToNotify.length === 0) return;
+    adminSnapshot.forEach(doc => {
+      if (!userIds.has(doc.id)) {
+        userIds.add(doc.id);
+        usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile);
+      }
+    });
+    staffSnapshot.forEach(doc => {
+      if (!userIds.has(doc.id)) {
+        userIds.add(doc.id);
+        usersToNotify.push({ key: doc.id, ...doc.data() } as UserProfile);
+      }
+    });
+
+    if (usersToNotify.length === 0) {
+      console.log('Nenhum usuário para notificar sobre o novo pedido.');
+      return;
+    }
 
     const notificationTitle = `🚀 Novo Pedido #${order.orderNumber}`;
     const notificationBody = `Cliente: ${order.customerName} | Total: R$${order.total.toFixed(2)}`;
     const relatedUrl = `/pedidos`;
-    const iconUrl = '/icons/icon-512x512.png';
 
+    // 1. Salvar no Firestore
     const firestorePromises = usersToNotify.map(user => {
       const notificationRef = db.collection('notifications').doc();
-      const priority = user.role === 'Administrador' ? 'high' : 'normal';
-      
-      return notificationRef.set({
+      const notificationData: Omit<Notification, 'id'> = {
         userId: user.key,
-        message: `${notificationTitle} - ${notificationBody}`,
+        title: notificationTitle,
+        message: notificationBody,
         relatedUrl,
-        isRead: false,
+        read: false,
         timestamp: new Date().toISOString(),
-        priority
-      });
+        priority: 'high', // Novo pedido é sempre alta prioridade
+      };
+      return notificationRef.set(notificationData);
     });
 
-    // **CORREÇÃO**: Removida a anotação de tipo `: Message`.
-    // O objeto completo será validado dentro da chamada `send()`.
-    const pushNotificationPayload = {
-      data: {
-        title: notificationTitle,
-        body: notificationBody,
-        icon: iconUrl,
-        url: relatedUrl,
-        tag: `pedido-${order.id}`
-      },
-      webpush: {
-        headers: {
-          Urgency: 'high',
-          TTL: (60 * 60 * 24).toString(),
-        }
-      }
-    };
-
+    // 2. Enviar Notificações Push
     const pushPromises = usersToNotify
       .filter(user => user.fcmToken)
-      .map(user => messagingAdmin.send({
-          ...pushNotificationPayload,
-          token: user.fcmToken!
+      .map(user => sendNotification(user.fcmToken!, {
+        title: notificationTitle,
+        body: notificationBody,
+        click_action: relatedUrl,
       }));
 
     await Promise.all([...firestorePromises, ...pushPromises]);
-    console.log(`Successfully sent ${pushPromises.length} push notifications.`);
+    console.log(`[API/Orders] Notificações de novo pedido enviadas para ${usersToNotify.length} usuários.`);
 
   } catch (error) {
-    console.error(`Failed to create new order notification for order ${order.id}:`, error);
+    console.error(`[API/Orders] Falha ao criar notificação de novo pedido para o pedido ${order.id}:`, error);
   }
 }
 
@@ -107,7 +108,8 @@ export async function POST(request: Request) {
 
     await newOrderRef.set(finalOrderData);
     
-    await createNewOrderNotification(finalOrderData);
+    // Chamar a função de notificação refatorada
+    await notifyNewOrder(finalOrderData);
 
     return NextResponse.json(finalOrderData, { status: 201 });
   } catch (error) {

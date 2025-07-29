@@ -3,74 +3,93 @@ import { db } from '@/lib/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import type { Notification } from '@/types';
 
-// Helper function to get the UID of the requesting user.
+/**
+ * Extrai o UID do usuário a partir do token de autorização da requisição.
+ * @param request A requisição Next.js.
+ * @returns O UID do usuário ou null se não for autorizado.
+ */
 async function getRequestingUserId(request: Request): Promise<string | null> {
   const authorizationHeader = request.headers.get('Authorization');
   if (!authorizationHeader?.startsWith('Bearer ')) return null;
+  
   const idToken = authorizationHeader.split('Bearer ')[1];
   if (!idToken) return null;
+
   try {
-    return (await getAuth().verifyIdToken(idToken)).uid;
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    return decodedToken.uid;
   } catch (error) {
-    console.error("Firebase ID token verification failed:", error);
+    console.error("Falha na verificação do token Firebase ID:", error);
     return null;
   }
 }
 
-// GET all unread notifications for the authenticated user
+/**
+ * GET: Busca as 50 notificações mais recentes para o usuário autenticado,
+ * criadas APÓS a data de criação da conta do usuário.
+ */
 export async function GET(request: Request) {
   const userId = await getRequestingUserId(request);
   if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    return new NextResponse('Não autorizado', { status: 401 });
   }
 
   try {
+    // 1. Obter a data de criação da conta do usuário
+    const userRecord = await getAuth().getUser(userId);
+    const creationTime = userRecord.metadata.creationTime; // Formato ISO 8601 (string)
+    
+    // 2. Modificar a query para incluir o filtro de data
     const notificationsSnapshot = await db.collection('notifications')
       .where('userId', '==', userId)
-      .limit(100)
+      .where('timestamp', '>=', creationTime) // Filtra notificações criadas após o registro
+      .orderBy('timestamp', 'desc')
+      .limit(50)
       .get();
 
-    const allUserNotifications = notificationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Notification[];
+    const notifications = notificationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Notification[];
     
-    const unreadNotifications = allUserNotifications
-      .filter(n => !n.isRead)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    return NextResponse.json(unreadNotifications);
-  } catch (error) {
-    console.error("Error fetching notifications collection:", error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(notifications);
+  } catch (error: any) {
+    console.error("Erro ao buscar notificações:", error);
+    // Adiciona uma verificação para o caso de o usuário não ser encontrado no Auth
+    if (error.code === 'auth/user-not-found') {
+        return new NextResponse('Usuário não encontrado na autenticação.', { status: 404 });
+    }
+    return new NextResponse('Erro Interno do Servidor', { status: 500 });
   }
 }
 
-// PUT: Mark all user's notifications as read
+/**
+ * PUT: Marca uma ou mais notificações como lidas.
+ */
 export async function PUT(request: Request) {
   const userId = await getRequestingUserId(request);
   if (!userId) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    return new NextResponse('Não autorizado', { status: 401 });
   }
 
   try {
-    const unreadSnapshot = await db.collection('notifications')
-        .where('userId', '==', userId)
-        .where('isRead', '==', false)
-        .get();
-
-    if (unreadSnapshot.empty) {
-        return NextResponse.json({ message: 'No unread notifications to mark as read.' });
+    const { notificationIds }: { notificationIds: string[] } = await request.json();
+    if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
+      return new NextResponse('Corpo da requisição inválido. É esperado um array "notificationIds".', { status: 400 });
     }
 
-    const batch = db.batch();
-    unreadSnapshot.docs.forEach(doc => {
-        batch.update(doc.ref, { isRead: true });
-    });
+    const chunkSize = 500;
+    for (let i = 0; i < notificationIds.length; i += chunkSize) {
+      const chunk = notificationIds.slice(i, i + chunkSize);
+      const batch = db.batch();
+      chunk.forEach(id => {
+        const docRef = db.collection('notifications').doc(id);
+        batch.update(docRef, { read: true });
+      });
+      await batch.commit();
+    }
 
-    await batch.commit();
-
-    return NextResponse.json({ message: `${unreadSnapshot.size} notifications marked as read.` });
+    return NextResponse.json({ message: `${notificationIds.length} notificações marcadas como lidas.` });
 
   } catch (error) {
-    console.error("Error marking all notifications as read:", error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    console.error("Erro ao marcar notificações como lidas:", error);
+    return new NextResponse('Erro Interno do Servidor', { status: 500 });
   }
 }

@@ -38,6 +38,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn, formatTimestamp } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { fontHeadline } from '@/lib/fonts'; // Corrected import path
 
 function OrderCard({ 
   order, 
@@ -75,7 +76,7 @@ function OrderCard({
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
           <div>
-            <CardTitle className="font-headline text-base">Pedido #{order.orderNumber}</CardTitle>
+            <CardTitle className="text-base">Pedido #{order.orderNumber}</CardTitle>
             <CardDescription>{order.customerName}</CardDescription>
           </div>
           <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
@@ -369,7 +370,7 @@ function PedidosPageContent() {
 
       <div className="space-y-4 mb-6">
         <div className="flex items-center justify-between gap-4">
-            <h1 className="text-3xl font-bold font-headline">Pedidos</h1>
+            <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Pedidos</h1>
             <div className="flex items-center gap-2">
                 <Button onClick={() => { setEditingOrder(null); setIsAddDialogOpen(true); }} size={isMobile ? 'icon' : 'default'}>
                     <PlusCircle className={cn(isMobile ? 'h-4 w-4' : 'mr-2 h-4 w-4')} />
@@ -449,7 +450,7 @@ function PedidosPageContent() {
               {kanbanStatuses.map(({status, icon: Icon, color}) => (
                   <Card key={status} className="w-full shadow-md">
                       <CardHeader className={cn("flex flex-row items-center justify-between p-3", color)}>
-                          <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><h2 className="font-headline font-semibold text-lg">{status}</h2></div>
+                          <div className="flex items-center gap-2"><Icon className="h-5 w-5" /><h2 className={cn("font-semibold text-lg", fontHeadline.className)}>{status}</h2></div>
                           <Badge className="bg-white/20 hover:bg-white/30">{(orders.filter(o => o.status === status)).length}</Badge>
                       </CardHeader>
                       <CardContent className="p-3 space-y-4 min-h-[calc(100vh-320px)]">

@@ -18,6 +18,7 @@ import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { TopProductsCard } from "@/components/app/top-products-card";
 import { DailyRevenueCard } from "@/components/app/daily-revenue-card";
+import { fontHeadline } from "@/lib/fonts"; // Corrected import path
 
 type StatCard = {
   status: OrderStatus;
@@ -65,6 +66,13 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+       <div>
+        <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Dashboard</h1>
+        <p className="text-muted-foreground">
+          Visualize as métricas e o resumo da sua operação em tempo real.
+        </p>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <DailyRevenueCard />
         <Link href="/pedidos">

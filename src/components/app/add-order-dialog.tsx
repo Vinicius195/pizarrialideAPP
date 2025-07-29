@@ -249,7 +249,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     if (isEditMode || !cleanedPhone || (cleanedPhone.length < 10)) {
         setSearchError(null);
         return;
-    };
+    }
 
     const searchCustomer = async () => {
       setIsSearchingCustomer(true);

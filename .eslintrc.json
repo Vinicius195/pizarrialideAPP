@@ -1,0 +1,22 @@
+{
+  "root": true,
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "next/core-web-vitals"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "parserOptions": {
+    "project": ["./tsconfig.json"],
+    "ecmaFeatures": {
+        "jsx": true
+    }
+  },
+  "ignorePatterns": ["node_modules/", ".next/", "out/", "public/workbox-*.js", "public/sw.js"],
+  "rules": {
+    // Adicione ou substitua regras aqui conforme necessário
+  }
+}

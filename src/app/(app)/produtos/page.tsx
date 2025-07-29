@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { getMockSettings } from '@/lib/settings-data';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { fontHeadline } from '@/lib/fonts'; // Corrected import path
 
 export default function ProdutosPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -87,7 +88,7 @@ export default function ProdutosPage() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold font-headline">Cardápio</h1>
+            <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Cardápio</h1>
             <p className="text-muted-foreground">Consulte os produtos, ingredientes e preços disponíveis.</p>
           </div>
           <div className="relative w-full md:w-auto md:max-w-xs">
@@ -105,14 +106,14 @@ export default function ProdutosPage() {
           {categoryOrder.map((category) => (
             groupedByCategory[category] && groupedByCategory[category].length > 0 && (
               <section key={category}>
-                <h2 className="text-2xl font-bold font-headline mb-4 pb-2 border-b-2 border-primary/20">
+                <h2 className={cn("text-2xl font-bold mb-4 pb-2 border-b-2 border-primary/20", fontHeadline.className)}>
                   {category === 'Adicional' ? 'Adicionais' : `${category}s`}
                 </h2>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {groupedByCategory[category].map((product) => (
                     <Card key={product.id} className="shadow-md flex flex-col justify-between">
                       <CardHeader>
-                        <CardTitle className="text-lg font-headline">{product.name}</CardTitle>
+                        <CardTitle className="text-lg">{product.name}</CardTitle>
                         {product.description && (
                           <CardDescription className="pt-1 text-sm">{product.description}</CardDescription>
                         )}
@@ -258,7 +259,7 @@ export default function ProdutosPage() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-                <h1 className="text-3xl font-bold font-headline">Produtos</h1>
+                <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Produtos</h1>
                 <p className="text-muted-foreground">Adicione, edite e gerencie seus produtos.</p>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto">
@@ -282,7 +283,7 @@ export default function ProdutosPage() {
           {categoryOrder.map((category) => (
             groupedProducts[category] && groupedProducts[category].length > 0 && (
               <section key={category}>
-                <h2 className="text-2xl font-bold font-headline mb-4 pb-2 border-b-2 border-primary/20">
+                <h2 className={cn("text-2xl font-bold mb-4 pb-2 border-b-2 border-primary/20", fontHeadline.className)}>
                   {category === 'Adicional' ? 'Adicionais' : `${category}s`}
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -290,7 +291,7 @@ export default function ProdutosPage() {
                     <Card key={product.id} className="shadow-md hover:shadow-lg transition-shadow flex flex-col justify-between">
                       <div>
                         <CardHeader className="flex flex-row items-start justify-between pb-2">
-                          <CardTitle className="text-lg font-headline truncate pr-2" title={product.name}>
+                          <CardTitle className="text-lg truncate pr-2" title={product.name}>
                             {product.name}
                           </CardTitle>
                           <DropdownMenu>

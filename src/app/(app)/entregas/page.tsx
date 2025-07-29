@@ -9,7 +9,10 @@ import { Bike, Check, MapPin, Phone, Link as LinkIcon, ExternalLink } from 'luci
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/contexts/user-context';
+<<<<<<< HEAD
 import { fontHeadline } from '@/lib/fonts'; // Corrected import path
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 
 
 export default function EntregasPage() {
@@ -56,7 +59,11 @@ export default function EntregasPage() {
     return (
         <div className="space-y-6">
             <div>
+<<<<<<< HEAD
                 <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Controle de Entregas</h1>
+=======
+                <h1 className="text-3xl font-bold font-headline">Controle de Entregas</h1>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
                 <p className="text-muted-foreground">Gerencie os pedidos que estão prontos, em rota ou já foram entregues.</p>
             </div>
             
@@ -83,7 +90,11 @@ export default function EntregasPage() {
                         >
                            <CardHeader>
                                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+<<<<<<< HEAD
                                     <CardTitle>Pedido #{order.orderNumber}</CardTitle>
+=======
+                                    <CardTitle className="font-headline">Pedido #{order.orderNumber}</CardTitle>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
                                     <Badge variant="outline" className={cn("text-xs w-fit", getStatusBadgeClasses(order.status))}>
                                       {order.status}
                                     </Badge>

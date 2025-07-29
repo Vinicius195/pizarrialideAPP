@@ -18,7 +18,10 @@ import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { TopProductsCard } from "@/components/app/top-products-card";
 import { DailyRevenueCard } from "@/components/app/daily-revenue-card";
+<<<<<<< HEAD
 import { fontHeadline } from "@/lib/fonts"; // Corrected import path
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 
 type StatCard = {
   status: OrderStatus;
@@ -66,6 +69,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+<<<<<<< HEAD
        <div>
         <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Dashboard</h1>
         <p className="text-muted-foreground">
@@ -73,6 +77,8 @@ export default function DashboardPage() {
         </p>
       </div>
 
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
       <div className="grid gap-4 sm:grid-cols-2">
         <DailyRevenueCard />
         <Link href="/pedidos">

@@ -36,8 +36,11 @@ import { AddCustomerDialog, type CustomerFormValues } from '@/components/app/add
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/contexts/user-context';
 import { useIsMobile } from '@/hooks/use-mobile';
+<<<<<<< HEAD
 import { cn } from '@/lib/utils';
 import { fontHeadline } from '@/lib/fonts'; // Corrected import path
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 
 
 export default function ClientesPage() {
@@ -83,7 +86,11 @@ export default function ClientesPage() {
   const renderMobileCard = (customer: Customer) => (
     <Card key={customer.id} className="shadow-md">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
+<<<<<<< HEAD
             <CardTitle className="text-base">{customer.name}</CardTitle>
+=======
+            <CardTitle className="text-base font-headline">{customer.name}</CardTitle>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
             <DropdownMenu>
                 <DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -127,7 +134,11 @@ export default function ClientesPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
+<<<<<<< HEAD
                 <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Gestão de Clientes</h1>
+=======
+                <h1 className="text-3xl font-bold font-headline">Gestão de Clientes</h1>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
                 <p className="text-muted-foreground">Visualize e gerencie as informações dos seus clientes identificáveis.</p>
             </div>
             <Button onClick={() => handleOpenDialog()} className='w-full sm:w-auto'><PlusCircle className="mr-2 h-4 w-4" />Adicionar Cliente</Button>

@@ -35,7 +35,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+<<<<<<< HEAD
 import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing, AlertTriangle, Send } from 'lucide-react';
+=======
+import { Check, X, MoreHorizontal, Edit, Eye, Trash2, UserPlus, Shield, BellRing, AlertTriangle } from 'lucide-react';
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import {
@@ -62,7 +66,10 @@ import { useFcm } from '@/hooks/useFcm';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { auth } from '@/lib/firebase-client';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+<<<<<<< HEAD
 import { fontHeadline } from '@/lib/fonts'; // Corrected import path
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 
 
 const settingsSchema = z.object({
@@ -207,6 +214,7 @@ const NotificationsCard = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
+<<<<<<< HEAD
         <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
           <div className="space-y-1">
             <h3 className="font-semibold">Status da Permissão</h3>
@@ -230,11 +238,40 @@ const NotificationsCard = () => {
             {notificationPermission === 'granted' ? 'Permissão Concedida' : 'Ativar Notificações'}
           </Button>
         </div>
+=======
+        {notificationPermission === 'loading' ? (
+          <p className="text-muted-foreground">Verificando permissões...</p>
+        ) : (
+          <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
+            <div className="space-y-1">
+              <h3 className="font-semibold">Status da Permissão</h3>
+              <p className={cn(
+                  "text-sm",
+                  notificationPermission === 'granted' && "text-green-600",
+                  notificationPermission === 'denied' && "text-red-600",
+                  notificationPermission === 'default' && "text-amber-600",
+              )}>
+                {notificationPermission === 'granted' && 'Notificações ativadas neste navegador.'}
+                {notificationPermission === 'denied' && 'Permissão bloqueada. Altere nas configurações do navegador.'}
+                {notificationPermission === 'default' && 'Permissão necessária para enviar notificações.'}
+              </p>
+            </div>
+            <Button
+              onClick={handleEnableNotifications}
+              disabled={notificationPermission === 'granted' || notificationPermission === 'denied'}
+            >
+              <BellRing className="mr-2 h-4 w-4" />
+              Ativar Notificações
+            </Button>
+          </div>
+        )}
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
       </CardContent>
     </Card>
   );
 };
 
+<<<<<<< HEAD
 // Card para testar o envio de notificações
 const TestNotificationCard = () => {
     const { getAuthToken } = useUser();
@@ -309,6 +346,8 @@ const TestNotificationCard = () => {
     );
 };
 
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
 
 // Componente para as configurações de Administrador
 const AdminSettings = () => {
@@ -532,8 +571,13 @@ const AdminSettings = () => {
                 {pizzaSizes.map((size) => (
                   <FormField key={size} control={form.control} name={`sizeAvailability.${size}`} render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm h-full">
+<<<<<<< HEAD
                       <div className="space-y-0.5"><FormLabel htmlFor={`switch-${size}`} className="text-base font-semibold capitalize cursor-pointer">{size}</FormLabel></div>
                       <FormControl><Switch id={`switch-${size}`} checked={field.value} onCheckedChange={field.onChange} aria-label={`Disponibilidade do tamanho ${size}`} /></FormControl>
+=======
+                      <div className="space-y-0.5"><FormLabel className="text-base font-semibold capitalize cursor-pointer">{size}</FormLabel></div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} aria-label={`Disponibilidade do tamanho ${size}`} /></FormControl>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
                     </FormItem>
                   )} />
                 ))}
@@ -557,7 +601,11 @@ export default function ConfiguracoesPage() {
   return (
     <div className="space-y-6">
       <div>
+<<<<<<< HEAD
         <h1 className={cn("text-3xl font-bold", fontHeadline.className)}>Configurações</h1>
+=======
+        <h1 className="text-3xl font-bold font-headline">Configurações</h1>
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
         <p className="text-muted-foreground">
           {isAdmin 
             ? "Gerencie as configurações gerais, usuários e notificações da sua pizzaria."
@@ -567,8 +615,11 @@ export default function ConfiguracoesPage() {
 
       <NotificationsCard />
 
+<<<<<<< HEAD
       <TestNotificationCard />
 
+=======
+>>>>>>> 89c89cc970e33ce077055fc0972bcfd494b9f177
       {isAdmin && <AdminSettings />}
 
     </div>

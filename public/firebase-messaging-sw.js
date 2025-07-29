@@ -1,58 +1,73 @@
-// Step 0: Import necessary scripts
-importScripts('https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.15.0/firebase-messaging-compat.js');
+// /pizarrialideAPP/public/firebase-messaging-sw.js
 
-// Step 1: Import the Firebase config
-try {
-  importScripts('/firebase-config.js');
-} catch (e) {
-  console.error('Could not import firebase-config.js.', e);
-}
+// --- Firebase Messaging Logic (Modern) ---
 
-// Step 2: Initialize Firebase
+// Importa os scripts do Firebase (versão compatível mais recente)
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+
+// Carrega a configuração do Firebase a partir de uma rota da API.
+importScripts('/firebase-config.js');
+
+// Garante que a configuração foi carregada antes de inicializar o Firebase.
 if (self.firebaseConfig) {
-  try {
-    firebase.initializeApp(self.firebaseConfig);
-    const messaging = firebase.messaging();
-    console.log('[SW] Firebase initialized successfully.');
+  // Inicializa o Firebase
+  firebase.initializeApp(self.firebaseConfig);
 
-    messaging.onBackgroundMessage((payload) => {
-      console.log('[SW] Received background message:', payload);
-      const notificationTitle = payload.notification?.title || payload.data?.title || 'Nova Notificação';
-      const notificationOptions = {
-        body: payload.notification?.body || payload.data?.body || 'Você tem uma nova mensagem.',
-        icon: payload.notification?.icon || payload.data?.icon || '/icons/icon-512x512.png',
-        badge: '/icons/icon-192x192.png',
-        vibrate: [200, 100, 200],
-        tag: payload.data?.tag || 'pizzaria-notification',
-        data: { url: payload.data?.url || '/' },
-      };
-      self.registration.showNotification(notificationTitle, notificationOptions);
-    });
+  const messaging = firebase.messaging();
 
-    self.addEventListener('notificationclick', (event) => {
-      console.log('[SW] Notification clicked:', event);
-      event.notification.close();
-      const urlToOpen = event.notification.data?.url || '/';
-      event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-          for (const client of clientList) {
-            if (client.url === urlToOpen && 'focus' in client) return client.focus();
+  /**
+   * Lida com mensagens recebidas quando o aplicativo está em segundo plano.
+   */
+  messaging.onBackgroundMessage((payload) => {
+    console.log('[SW] Mensagem recebida em segundo plano:', payload);
+
+    // Extrai a notificação de `payload.notification`
+    const notificationTitle = payload.notification.title;
+    const notificationOptions = {
+      body: payload.notification.body,
+      icon: payload.notification.icon || '/icons/icon-192x192.png',
+      // A URL para abrir ao clicar é enviada em `payload.fcmOptions.link`.
+      data: {
+        url: payload.fcmOptions.link || '/',
+      },
+    };
+
+    // Exibe a notificação.
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  });
+
+  /**
+   * Lida com o clique na notificação.
+   */
+  self.addEventListener('notificationclick', (event) => {
+    // Fecha a notificação.
+    event.notification.close();
+
+    const urlToOpen = event.notification.data.url;
+
+    // Procura por uma janela existente e a foca; caso contrário, abre uma nova.
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === urlToOpen && 'focus' in client) {
+            return client.focus();
           }
-          if (clients.openWindow) return clients.openWindow(urlToOpen);
-        })
-      );
-    });
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(urlToOpen);
+        }
+      })
+    );
+  });
 
-  } catch (error) {
-    console.error('[SW] Error during Firebase initialization:', error);
-  }
 } else {
-  console.error('[SW] Firebase config not found. Initialization failed.');
+  console.error('[SW] Configuração do Firebase não encontrada. O Service Worker não foi inicializado.');
 }
 
-// --- PWA Caching Logic ---
-const CACHE_NAME = 'pizzaria-app-cache-v6'; // Incremented version to apply changes
+
+// --- PWA Caching Logic (Preserved) ---
+const CACHE_NAME = 'pizzaria-app-cache-v6'; // A versão do cache é mantida
 const ASSETS_TO_CACHE = [
   '/',
   '/icons/icon-192x192.png',
@@ -61,7 +76,7 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing new version...');
+    console.log('[SW] Instalando Service Worker...');
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
     );
@@ -69,13 +84,13 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating new version...');
+    console.log('[SW] Ativando Service Worker...');
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
                 cacheNames.map((cacheName) => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('[SW] Deleting old cache:', cacheName);
+                        console.log('[SW] Deletando cache antigo:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
@@ -88,28 +103,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const { request } = event;
 
-    // Rule 1: Ignore non-HTTP/HTTPS requests (e.g., chrome-extension://)
     if (!request.url.startsWith('http')) {
         return;
     }
 
-    // Rule 2: Ignore all requests to Firebase, your own API, and the Firebase config script.
-    // This is crucial for real-time updates, authentication and configuration.
     if (
       request.url.includes('firestore.googleapis.com') ||
       request.url.includes('/api/') ||
       request.url.includes('/firebase-config.js')
     ) {
-        return; // Let the network handle it without interception.
+        return; // Deixa a rede lidar com isso.
     }
 
-    // Rule 3: Ignore all non-GET requests. Caching only applies to GET.
     if (request.method !== 'GET') {
         return;
     }
 
-    // Strategy for app navigation and core assets (JS/CSS): Network First, then Cache
-    // This ensures users get the latest version of the app, falling back to cache if offline.
     if (request.mode === 'navigate' || request.destination === 'script' || request.destination === 'style') {
         event.respondWith(
             fetch(request)
@@ -119,15 +128,12 @@ self.addEventListener('fetch', (event) => {
                     return networkResponse;
                 })
                 .catch(() => caches.match(request).then(cachedResponse => {
-                    // Return the cached response if the network fails
                     return cachedResponse || Response.error();
                 }))
         );
         return;
     }
 
-    // Strategy for static assets (images, fonts): Cache First, then Network
-    // This provides a fast loading experience for non-critical-assets.
     event.respondWith(
         caches.match(request).then(cachedResponse => {
             return cachedResponse || fetch(request).then(networkResponse => {

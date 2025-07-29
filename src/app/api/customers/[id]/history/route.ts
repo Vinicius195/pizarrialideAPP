@@ -29,7 +29,7 @@ export async function GET(
       .where('customerPhone', '==', customerPhone)
       .get();
       
-    let orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+    const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
 
     // Sort the orders in memory by converting timestamp strings to dates
     orders.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

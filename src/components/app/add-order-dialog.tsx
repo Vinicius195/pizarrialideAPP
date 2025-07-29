@@ -249,7 +249,7 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
     if (isEditMode || !cleanedPhone || (cleanedPhone.length < 10)) {
         setSearchError(null);
         return;
-    };
+    }
 
     const searchCustomer = async () => {
       setIsSearchingCustomer(true);
@@ -368,13 +368,13 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                     <FormControl>
                       <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                         <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl><RadioGroupItem value="retirada" /></FormControl>
-                          <FormLabel className="font-normal cursor-pointer">Retirada</FormLabel>
+                          <FormControl><RadioGroupItem value="retirada" id="retirada-option" /></FormControl>
+                          <FormLabel htmlFor="retirada-option" className="font-normal cursor-pointer">Retirada</FormLabel>
                         </FormItem>
                         {isManager && (
                           <FormItem className="flex items-center space-x-2 space-y-0">
-                            <FormControl><RadioGroupItem value="entrega" /></FormControl>
-                            <FormLabel className="font-normal cursor-pointer">Entrega</FormLabel>
+                            <FormControl><RadioGroupItem value="entrega" id="entrega-option" /></FormControl>
+                            <FormLabel htmlFor="entrega-option" className="font-normal cursor-pointer">Entrega</FormLabel>
                           </FormItem>
                         )}
                       </RadioGroup>
@@ -392,12 +392,12 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                         <FormControl>
                           <RadioGroup onValueChange={(value) => { field.onChange(value); setValue('address', ''); setValue('locationLink', ''); }} defaultValue={field.value} className="flex flex-col space-y-2 pt-1" >
                             <FormItem className="flex items-center space-x-3 space-y-0">
-                              <FormControl><RadioGroupItem value="manual" /></FormControl>
-                              <FormLabel className="font-normal cursor-pointer">Digitar Endereço</FormLabel>
+                              <FormControl><RadioGroupItem value="manual" id="manual-address-option" /></FormControl>
+                              <FormLabel htmlFor="manual-address-option" className="font-normal cursor-pointer">Digitar Endereço</FormLabel>
                             </FormItem>
                             <FormItem className="flex items-center space-x-3 space-y-0">
-                              <FormControl><RadioGroupItem value="link" /></FormControl>
-                              <FormLabel className="font-normal cursor-pointer">Colar Link de Localização</FormLabel>
+                              <FormControl><RadioGroupItem value="link" id="link-address-option" /></FormControl>
+                              <FormLabel htmlFor="link-address-option" className="font-normal cursor-pointer">Colar Link de Localização</FormLabel>
                             </FormItem>
                           </RadioGroup>
                         </FormControl>
@@ -443,8 +443,11 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                         {isPizza && (
                            <FormField control={form.control} name={`items.${index}.isHalfHalf`} render={({ field }) => (
                                <FormItem className="flex flex-row items-center justify-between rounded-lg border bg-muted/30 p-3 shadow-sm">
-                                   <div className="space-y-0.5"><FormLabel className="text-sm font-medium">Pizza Meio a Meio?</FormLabel><FormDescriptionUI className="text-xs">Será cobrado o valor do sabor mais caro.</FormDescriptionUI></div>
-                                   <FormControl><Switch checked={field.value} onCheckedChange={(checked) => handleHalfHalfSwitch(checked, index)} /></FormControl>
+                                   <div className="space-y-0.5">
+                                      <FormLabel htmlFor={`half-half-switch-${index}`} className="text-sm font-medium">Pizza Meio a Meio?</FormLabel>
+                                      <FormDescriptionUI className="text-xs">Será cobrado o valor do sabor mais caro.</FormDescriptionUI>
+                                   </div>
+                                   <FormControl><Switch id={`half-half-switch-${index}`} checked={field.value} onCheckedChange={(checked) => handleHalfHalfSwitch(checked, index)} /></FormControl>
                                </FormItem>
                              )}
                            />
@@ -472,7 +475,12 @@ export function AddOrderDialog({ open, onOpenChange, onSubmit, order }: AddOrder
                                       <RadioGroup onValueChange={(value) => { field.onChange(value); trigger(`items.${index}.size`); }} value={field.value} className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-1">
                                          {Object.keys(selectedProduct.sizes || {})
                                             .filter(size => selectedProduct.category !== 'Pizza' || getMockSettings().sizeAvailability[size as PizzaSize])
-                                            .map((size) => (<FormItem key={size} className="flex items-center space-x-2 space-y-0"><FormControl><RadioGroupItem value={size} /></FormControl><FormLabel className="font-normal capitalize cursor-pointer">{size}</FormLabel></FormItem>))}
+                                            .map((size) => (
+                                              <FormItem key={size} className="flex items-center space-x-2 space-y-0">
+                                                <FormControl><RadioGroupItem value={size} id={`size-radio-${index}-${size}`} /></FormControl>
+                                                <FormLabel htmlFor={`size-radio-${index}-${size}`} className="font-normal capitalize cursor-pointer">{size}</FormLabel>
+                                              </FormItem>
+                                            ))}
                                       </RadioGroup>
                                     </FormControl>
                                     <FormMessage />

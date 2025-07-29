@@ -12,7 +12,7 @@ export interface Product {
   price?: number;
   isAvailable: boolean;
   description?: string;
-};
+}
 
 export interface Customer {
   id: string;
@@ -23,7 +23,7 @@ export interface Customer {
   lastOrderDate: string;
   totalSpent: number;
   orderCount: number;
-};
+}
 
 // This now matches the more robust structure the context expects.
 export interface OrderItem {
@@ -50,7 +50,7 @@ export interface Order {
   address?: string;
   locationLink?: string;
   notes?: string;
-};
+}
 
 export type UserRole = 'Administrador' | 'Funcionário';
 export type UserStatus = 'Aprovado' | 'Pendente' | 'Reprovado';
